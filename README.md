@@ -4,6 +4,32 @@
   <img src="./assets/bot_icon.png" alt="Tg9 Discord Bot" width="200">
 </div>
 
+<p align="center">
+  <a href="https://www.python.org/">
+    <img src="https://img.shields.io/badge/python-3670A0?logo=python&logoColor=ffdd54">
+  </a>
+  <a href="https://github.com/Rapptz/discord.py/">
+     <img src="https://img.shields.io/badge/discord-py-blue.svg" alt="discord.py">
+  </a>
+  <a href="https://github.com/SoulDev07/TG9-Bot/pulls">
+    <img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg">
+  </a>
+</p>
+
+<p align="center">
+  <a href="#features">Features</a>
+  •
+  <a href="#setup">Setup</a>
+  •
+  <a href="#usage">Usage</a>
+  •
+  <a href="#support">Support</a>
+  •
+  <a href="#built-with">Built With</a>
+  •
+  <a href="#license">License</a>
+</p>
+
 Welcome to Tg9, a Discord bot tailored for [TG9 CITY](https://discord.gg/dq6mrR433w) Discord Server. This bot is powered by discord.py and brings a variety of features to enhance the server experience.
 
 ## Features
@@ -42,6 +68,9 @@ Welcome to Tg9, a Discord bot tailored for [TG9 CITY](https://discord.gg/dq6mrR4
     python bot.py
     ```
 
+## Usage
+Simply type the command prefix (`Tg9` by default) or use slash command (`/`), followed by your desired command in any text channel.
+
 ## Support
 
 Feel free to join my Discord server [here](https://discord.gg/dq6mrR433w). Don't hesitate to reach out if you require help with anything.
@@ -50,3 +79,6 @@ Feel free to join my Discord server [here](https://discord.gg/dq6mrR433w). Don't
 
 * [Python 3.12](https://www.python.org/)
 * [discord.py](https://github.com/Rapptz/discord.py)
+
+## License
+See [LICENSE](LICENSE) for details.

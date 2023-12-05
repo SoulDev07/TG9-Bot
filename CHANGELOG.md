@@ -4,6 +4,7 @@
 * Upgraded to discord.py 2.3
 * More Tidying
 * Updated [README](README.md)
+* Added [LICENSE](LICENSE)
 
 ### Version 1.3
 * Upgraded to discord.py 2.0
