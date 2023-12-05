@@ -3,6 +3,7 @@
 ### Version 1.4
 * Upgraded to discord.py 2.3
 * More Tidying
+* Updated [README](README.md)
 
 ### Version 1.3
 * Upgraded to discord.py 2.0
