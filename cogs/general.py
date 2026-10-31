@@ -32,16 +32,21 @@ class General(commands.Cog, name="general"):
         embed = discord.Embed(
             title="🏓 Pong!",
             description=f"The bot latency is {round(self.bot.latency * 1000)}ms.",
-            color=0x42F56C
+            color=0x42F56C,
         )
         await ctx.send(embed=embed)
 
-    @commands.hybrid_command(name="server", aliases=["support", "supportserver"], description="Get support Server")
+    @commands.hybrid_command(
+        name="server", aliases=["support", "supportserver"], description="Get support Server"
+    )
     async def server(self, ctx):
         """Get the invite link of the discord server of the bot for some support."""
 
         server_link = self.bot.config["bot_invite_link"]
-        embed = discord.Embed(description=f"Join the support server for the bot by clicking [here]({server_link}).", color=0xD75BF4)
+        embed = discord.Embed(
+            description=f"Join the support server for the bot by clicking [here]({server_link}).",
+            color=0xD75BF4,
+        )
         try:
             await ctx.author.send(embed=embed)
             await ctx.send("I sent you a private message!")
@@ -54,12 +59,9 @@ class General(commands.Cog, name="general"):
         """Create a poll where members can vote."""
 
         embed = discord.Embed(
-            title="A new poll has been created!",
-            description=f"{title}",
-            color=0x42F56C
+            title="A new poll has been created!", description=f"{title}", color=0x42F56C
         )
-        embed.set_footer(
-            text=f"Poll created by: {ctx.author} • React to vote!")
+        embed.set_footer(text=f"Poll created by: {ctx.author} • React to vote!")
         embed_message = await ctx.send(embed=embed)
         await embed_message.add_reaction("👍")
         await embed_message.add_reaction("👎")

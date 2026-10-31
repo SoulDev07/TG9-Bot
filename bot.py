@@ -1,16 +1,17 @@
-""" Version: 1.4 """
+"""Version: 2.0.0"""
 
+import asyncio
 import os
 import platform
 import random
 import sys
+
 import discord
 from discord.ext import commands, tasks
 from discord.ext.commands import Context
 from dotenv import load_dotenv
-from helpers import exceptions, json_manager
 
-GLOBAL_SYNC = False
+from helpers import exceptions, json_manager
 
 # Load environment variables from .env file
 load_dotenv()
@@ -19,8 +20,8 @@ load_dotenv()
 config_path = os.path.join(".", "config.json")
 if not os.path.isfile(config_path):
     sys.exit("ADD config.json file")
-else:
-    config = json_manager.load_config()
+
+config = json_manager.load_config()
 
 # Set up bot intents
 intents = discord.Intents.default()
@@ -28,22 +29,29 @@ intents.message_content = True
 
 
 class DiscordBot(commands.Bot):
-    def __init__(self):
+    """Core TG9 Bot instance managing cogs and lifecycle events."""
+
+    def __init__(self) -> None:
         super().__init__(
-            command_prefix=commands.when_mentioned_or(config["bot_prefix"]),
+            command_prefix=commands.when_mentioned_or(config.get("bot_prefix", "Tg9 ")),
             intents=intents,
-            help_command=None,  # Remove help command
+            help_command=None,
         )
         self.config = config
 
-    async def load_cogs(self):
+    async def load_cogs(self) -> None:
         """
         Load extension modules (cogs) into the bot.
 
         This function loops through the 'cogs' directory and loads each valid extension.
         """
-        for file in os.listdir("./cogs"):
-            if file.endswith(".py"):
+        cogs_dir = os.path.join(".", "cogs")
+        if not os.path.isdir(cogs_dir):
+            print(f"Cogs directory '{cogs_dir}' not found.")
+            return
+
+        for file in sorted(os.listdir(cogs_dir)):
+            if file.endswith(".py") and not file.startswith("__"):
                 extension = file[:-3]
                 try:
                     await self.load_extension(f"cogs.{extension}")
@@ -53,71 +61,93 @@ class DiscordBot(commands.Bot):
                     print(f"Failed to load extension {extension}\n{exception}")
 
     @tasks.loop(minutes=60.0)
-    async def status_task(self):
+    async def status_task(self) -> None:
         """
         Task to change the bot's status every 60 minutes.
 
         This function selects a random status from the config file and updates the bot's presence.
         """
-        status = random.choice(self.config["statuses"])
-        await self.change_presence(status=discord.Status.idle, activity=discord.Game(status))
+        statuses = self.config.get("statuses", [])
+        if statuses:
+            status = random.choice(statuses)
+            await self.change_presence(
+                status=discord.Status.idle,
+                activity=discord.Game(status),
+            )
 
     @status_task.before_loop
-    async def before_status_task(self):
+    async def before_status_task(self) -> None:
         await self.wait_until_ready()
 
-    async def setup_hook(self):
+    async def setup_hook(self) -> None:
         """
-        Perform setup tasks when the bot is ready.
+        Perform setup tasks before the bot connects to the gateway.
+        Loads all cogs first to ensure application commands are registered.
         """
-        print("Bot:", self.user.name)
+        bot_name = self.user.name if self.user else "TG9-Bot"
+        print("Bot:", bot_name)
         print("discord.py API Version:", discord.__version__)
-        print(f"Platform Info: Python-{platform.python_version()} {platform.system()} {platform.release()}")
+        platform_info = (
+            f"Python-{platform.python_version()} {platform.system()} {platform.release()}"
+        )
+        print(f"Platform Info: {platform_info}")
         print("-----------------------------------------------------")
 
-        if GLOBAL_SYNC:
-            bot.tree.clear_commands(guild=None)
-            await bot.tree.sync()
-        else:
-            guild = discord.Object(id=bot.config["test_guild"])
-            bot.tree.clear_commands(guild=guild)
-            await bot.tree.sync(guild=guild)
-
+        # Load all cogs before any sync operations
         await self.load_cogs()
-        self.status_task.start()
 
-    async def on_message(self, message: discord.Message):
+        # Start periodic presence update loop
+        if not self.status_task.is_running():
+            self.status_task.start()
+
+    async def on_message(self, message: discord.Message) -> None:
         if message.author == self.user or message.author.bot:
             return
         await self.process_commands(message)
 
-    async def on_command_completion(self, ctx: Context):
-        full_command_name = ctx.command.qualified_name
-        split = full_command_name.split(" ")
-        executed_command = str(split[0])
+    async def on_command_completion(self, ctx: Context) -> None:
+        if not ctx.command:
+            return
+        executed_command = ctx.command.qualified_name.split(" ")[0]
 
         if ctx.guild is not None:
-            print(f"Executed {executed_command} command in {ctx.guild.name}"
-                  f" [{ctx.guild.id}] by {ctx.author} [{ctx.author.id}]")
+            print(
+                f"Executed {executed_command} command in {ctx.guild.name} "
+                f"[{ctx.guild.id}] by {ctx.author} [{ctx.author.id}]"
+            )
         else:
-            print(f"Executed {executed_command} command by {ctx.author} ({ctx.author.id}) in Personal Chat")
+            print(
+                f"Executed {executed_command} command by {ctx.author} "
+                f"({ctx.author.id}) in Personal Chat"
+            )
 
-    async def on_command_error(self, ctx: Context, error):
+    async def on_command_error(self, ctx: Context, error: Exception) -> None:
         if isinstance(error, commands.MissingRequiredArgument):
-            embed = discord.Embed(title="Error!", description=str(error).capitalize(), color=0xE02B2B)
+            embed = discord.Embed(
+                title="Error!",
+                description=str(error).capitalize(),
+                color=0xE02B2B,
+            )
             await ctx.send(embed=embed)
 
         elif isinstance(error, commands.MissingPermissions):
+            missing_perms = ", ".join(error.missing_permissions)
             embed = discord.Embed(
                 title="Error!",
-                description=f"You are missing the permission `{error.missing_perms}` to execute this command!",
+                description=(
+                    f"You are missing the permission `{missing_perms}` to execute this command!"
+                ),
                 color=0xE02B2B,
             )
             await ctx.send(embed=embed)
 
         elif isinstance(error, commands.BotMissingPermissions):
+            missing_perms = ", ".join(error.missing_permissions)
             embed = discord.Embed(
-                description=f"I am missing the permission `{error.missing_permissions}` to execute this command!",
+                title="Error!",
+                description=(
+                    f"I am missing the permission `{missing_perms}` to execute this command!"
+                ),
                 color=0xE02B2B,
             )
             await ctx.send(embed=embed)
@@ -125,27 +155,43 @@ class DiscordBot(commands.Bot):
         elif isinstance(error, commands.CommandOnCooldown):
             minutes, seconds = divmod(error.retry_after, 60)
             hours, minutes = divmod(minutes, 60)
-            hours = hours % 24
+            hours %= 24
+            time_parts = []
+            if round(hours) > 0:
+                time_parts.append(f"{round(hours)} hours")
+            if round(minutes) > 0:
+                time_parts.append(f"{round(minutes)} minutes")
+            time_parts.append(f"{round(seconds)} seconds")
+
             embed = discord.Embed(
                 title="Cooldown!",
-                description="You can use this command again in "
-                f"{f'{round(hours)} hours' if round(hours) > 0 else ''} "
-                f"{f'{round(minutes)} minutes' if round(minutes) > 0 else ''} "
-                f"{f'{round(seconds)} seconds' if round(
-                    seconds) > 0 else ''}.",
+                description=f"You can use this command again in {' '.join(time_parts)}.",
                 color=0xE02B2B,
             )
             await ctx.send(embed=embed)
 
-        elif isinstance(error,  exceptions.UserNotOwner):
-            embed = discord.Embed(description="You are not the owner of this bot!", color=0xE02B2B)
+        elif isinstance(error, exceptions.UserNotOwner):
+            embed = discord.Embed(
+                description="You are not the owner of this bot!",
+                color=0xE02B2B,
+            )
             await ctx.send(embed=embed)
         else:
             raise error
 
 
-# Create an instance of the bot
-bot = DiscordBot()
+async def main() -> None:
+    """Async main entrypoint with safe lifecycle management."""
+    token = os.getenv("TOKEN")
+    if not token:
+        sys.exit("TOKEN environment variable is not set in .env")
 
-# Run the bot
-bot.run(os.getenv("TOKEN"))
+    async with DiscordBot() as bot:
+        await bot.start(token)
+
+
+if __name__ == "__main__":
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        pass

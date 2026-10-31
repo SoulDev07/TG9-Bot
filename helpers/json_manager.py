@@ -7,7 +7,7 @@ CONFIG_FILE = "config.json"
 def read_json_file(file_path: str):
     """Read and return JSON data from a file."""
     try:
-        with open(file_path, "r", encoding="utf-8") as file:
+        with open(file_path, encoding="utf-8") as file:
             return json.load(file)
     except FileNotFoundError:
         return {"ids": []} if "blacklist" in file_path else {"statuses": []}

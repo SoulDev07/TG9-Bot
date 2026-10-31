@@ -13,19 +13,25 @@ class Help(commands.Cog, name="help"):
     @commands.hybrid_command(name="help", description="Get list of all commands")
     async def help(self, ctx):
         """List all commands from every Cog the bot has loaded."""
-
         # Get the bot prefix from the configuration
         prefix = self.bot.config["bot_prefix"]
 
-        embed = discord.Embed(title="Help", description="List of available commands:", color=0x42F56C)
+        embed = discord.Embed(
+            title="Help", description="List of available commands:", color=0x42F56C
+        )
 
-        for cog_name in self.bot.cogs.keys():
+        for cog_name in self.bot.cogs:
             cog = self.bot.get_cog(cog_name)
+            if not cog:
+                continue
             bot_commands = cog.get_commands()
             command_list = [command.name for command in bot_commands]
             command_description = [command.help for command in bot_commands]
 
-            help_text = "\n".join(f"```{prefix}{n} - {h}```" for n, h in zip(command_list, command_description))
+            help_text = "\n".join(
+                f"```{prefix}{n} - {h}```"
+                for n, h in zip(command_list, command_description, strict=False)
+            )
             embed.add_field(name=f"{cog_name.capitalize()}", value=f"{help_text}", inline=False)
 
         await ctx.send(embed=embed)
