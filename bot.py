@@ -1,4 +1,4 @@
-"""Version: 2.0.0"""
+"""TG9 Discord Bot - Main Entry Point."""
 
 import asyncio
 import os
@@ -9,19 +9,12 @@ import sys
 import discord
 from discord.ext import commands, tasks
 from discord.ext.commands import Context
-from dotenv import load_dotenv
 
-from helpers import exceptions, json_manager
+from helpers import exceptions
+from helpers.config import BotConfig, load_config
+from helpers.logger import get_logger, setup_logging
 
-# Load environment variables from .env file
-load_dotenv()
-
-# Check for the existence of config.json
-config_path = os.path.join(".", "config.json")
-if not os.path.isfile(config_path):
-    sys.exit("ADD config.json file")
-
-config = json_manager.load_config()
+logger = get_logger()
 
 # Set up bot intents
 intents = discord.Intents.default()
@@ -31,13 +24,13 @@ intents.message_content = True
 class DiscordBot(commands.Bot):
     """Core TG9 Bot instance managing cogs and lifecycle events."""
 
-    def __init__(self) -> None:
+    def __init__(self, bot_config: BotConfig) -> None:
         super().__init__(
-            command_prefix=commands.when_mentioned_or(config.get("bot_prefix", "Tg9 ")),
+            command_prefix=commands.when_mentioned_or(bot_config.bot_prefix),
             intents=intents,
             help_command=None,
         )
-        self.config = config
+        self.config: BotConfig = bot_config
 
     async def load_cogs(self) -> None:
         """
@@ -47,7 +40,7 @@ class DiscordBot(commands.Bot):
         """
         cogs_dir = os.path.join(".", "cogs")
         if not os.path.isdir(cogs_dir):
-            print(f"Cogs directory '{cogs_dir}' not found.")
+            logger.warning("cogs_directory_missing", path=cogs_dir)
             return
 
         for file in sorted(os.listdir(cogs_dir)):
@@ -55,19 +48,22 @@ class DiscordBot(commands.Bot):
                 extension = file[:-3]
                 try:
                     await self.load_extension(f"cogs.{extension}")
-                    print(f"Loaded extension '{extension}'")
+                    logger.info("extension_loaded", extension=extension)
                 except Exception as e:
-                    exception = f"{type(e).__name__}: {e}"
-                    print(f"Failed to load extension {extension}\n{exception}")
+                    logger.error(
+                        "extension_load_failed",
+                        extension=extension,
+                        error=f"{type(e).__name__}: {e}",
+                    )
 
     @tasks.loop(minutes=60.0)
     async def status_task(self) -> None:
         """
         Task to change the bot's status every 60 minutes.
 
-        This function selects a random status from the config file and updates the bot's presence.
+        This function selects a random status from the config and updates the bot's presence.
         """
-        statuses = self.config.get("statuses", [])
+        statuses = self.config.statuses
         if statuses:
             status = random.choice(statuses)
             await self.change_presence(
@@ -85,13 +81,13 @@ class DiscordBot(commands.Bot):
         Loads all cogs first to ensure application commands are registered.
         """
         bot_name = self.user.name if self.user else "TG9-Bot"
-        print("Bot:", bot_name)
-        print("discord.py API Version:", discord.__version__)
-        platform_info = (
-            f"Python-{platform.python_version()} {platform.system()} {platform.release()}"
+        logger.info(
+            "bot_starting",
+            bot_name=bot_name,
+            discord_version=discord.__version__,
+            python_version=platform.python_version(),
+            system=f"{platform.system()} {platform.release()}",
         )
-        print(f"Platform Info: {platform_info}")
-        print("-----------------------------------------------------")
 
         # Load all cogs before any sync operations
         await self.load_cogs()
@@ -111,14 +107,21 @@ class DiscordBot(commands.Bot):
         executed_command = ctx.command.qualified_name.split(" ")[0]
 
         if ctx.guild is not None:
-            print(
-                f"Executed {executed_command} command in {ctx.guild.name} "
-                f"[{ctx.guild.id}] by {ctx.author} [{ctx.author.id}]"
+            logger.info(
+                "command_executed",
+                command=executed_command,
+                guild=ctx.guild.name,
+                guild_id=ctx.guild.id,
+                author=str(ctx.author),
+                author_id=ctx.author.id,
             )
         else:
-            print(
-                f"Executed {executed_command} command by {ctx.author} "
-                f"({ctx.author.id}) in Personal Chat"
+            logger.info(
+                "command_executed",
+                command=executed_command,
+                guild="DM",
+                author=str(ctx.author),
+                author_id=ctx.author.id,
             )
 
     async def on_command_error(self, ctx: Context, error: Exception) -> None:
@@ -177,16 +180,31 @@ class DiscordBot(commands.Bot):
             )
             await ctx.send(embed=embed)
         else:
+            logger.error(
+                "command_error",
+                command=ctx.command.qualified_name if ctx.command else "unknown",
+                error=str(error),
+            )
             raise error
 
 
 async def main() -> None:
-    """Async main entrypoint with safe lifecycle management."""
-    token = os.getenv("TOKEN")
-    if not token:
-        sys.exit("TOKEN environment variable is not set in .env")
+    """Async main entrypoint with safe lifecycle management and typed configuration."""
+    bot_config = load_config()
+    setup_logging(
+        log_level=bot_config.log_level,
+        json_logs=bot_config.json_logs,
+    )
 
-    async with DiscordBot() as bot:
+    token = bot_config.token.get_secret_value()
+    if not token:
+        logger.critical(
+            "missing_token",
+            message="TOKEN environment variable is not set in .env",
+        )
+        sys.exit(1)
+
+    async with DiscordBot(bot_config=bot_config) as bot:
         await bot.start(token)
 
 
