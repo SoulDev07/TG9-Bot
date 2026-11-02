@@ -18,45 +18,241 @@ class Owner(commands.Cog, name="owner"):
 
     @commands.command(name="sync")
     @checks.is_owner()
-    @commands.guild_only()
-    async def sync(self, ctx: Context, scope: str = "guild"):
-        """Sync application command tree. Scope options: 'guild' (default), 'global', 'clear'."""
-        if scope == "global":
-            synced = await self.bot.tree.sync()
-            logger.info("global_commands_synced", count=len(synced), author=str(ctx.author))
+    async def sync(self, ctx: Context, scope: str | None = None):
+        """
+        Sync application command tree.
+
+        Scope options:
+        - None / 'guild': Sync to current guild (copies global commands).
+        - 'global': Sync commands globally across Discord.
+        - 'clear': Clear commands in current guild and sync.
+        - 'clearglobal': Clear global commands and sync.
+        - <guild_id>: Sync to a specific target guild ID.
+        """
+        try:
+            if scope == "global":
+                synced = await self.bot.tree.sync()
+                logger.info("global_commands_synced", count=len(synced), author=str(ctx.author))
+                embed = discord.Embed(
+                    title="Global Sync Complete",
+                    description=(
+                        f"Successfully synced `{len(synced)}` application commands globally."
+                    ),
+                    color=0x42F56C,
+                )
+                await ctx.send(embed=embed)
+
+            elif scope == "clearglobal":
+                self.bot.tree.clear_commands(guild=None)
+                await self.bot.tree.sync()
+                logger.info("global_commands_cleared", author=str(ctx.author))
+                embed = discord.Embed(
+                    title="Global Commands Cleared",
+                    description="Cleared all global application commands.",
+                    color=0x42F56C,
+                )
+                await ctx.send(embed=embed)
+
+            elif scope == "clear":
+                if not ctx.guild:
+                    await ctx.send("Guild-level clear can only be used within a server.")
+                    return
+                self.bot.tree.clear_commands(guild=ctx.guild)
+                await self.bot.tree.sync(guild=ctx.guild)
+                logger.info(
+                    "guild_commands_cleared",
+                    guild_id=ctx.guild.id,
+                    author=str(ctx.author),
+                )
+                embed = discord.Embed(
+                    title="Guild Commands Cleared",
+                    description=f"Cleared all application commands in **{ctx.guild.name}**.",
+                    color=0x42F56C,
+                )
+                await ctx.send(embed=embed)
+
+            elif scope and scope.isdigit():
+                target_guild = discord.Object(id=int(scope))
+                self.bot.tree.copy_global_to(guild=target_guild)
+                synced = await self.bot.tree.sync(guild=target_guild)
+                logger.info(
+                    "target_guild_commands_synced",
+                    count=len(synced),
+                    target_guild_id=scope,
+                    author=str(ctx.author),
+                )
+                embed = discord.Embed(
+                    title="Target Guild Sync Complete",
+                    description=f"Successfully synced `{len(synced)}` commands to Guild `{scope}`.",
+                    color=0x42F56C,
+                )
+                await ctx.send(embed=embed)
+
+            else:
+                if not ctx.guild:
+                    await ctx.send("Cannot sync to current guild outside a server. Use `global`.")
+                    return
+                self.bot.tree.copy_global_to(guild=ctx.guild)
+                synced = await self.bot.tree.sync(guild=ctx.guild)
+                logger.info(
+                    "guild_commands_synced",
+                    count=len(synced),
+                    guild_id=ctx.guild.id,
+                    author=str(ctx.author),
+                )
+                embed = discord.Embed(
+                    title="Guild Sync Complete",
+                    description=(
+                        f"Successfully synced `{len(synced)}` commands to **{ctx.guild.name}**."
+                    ),
+                    color=0x42F56C,
+                )
+                await ctx.send(embed=embed)
+
+        except discord.HTTPException as e:
+            logger.error("sync_http_error", error=str(e), author=str(ctx.author))
             embed = discord.Embed(
-                title="Global Sync Complete",
-                description=f"Successfully synced `{len(synced)}` application commands globally.",
+                title="Sync Failed",
+                description=f"Discord API returned an error: `{e}`",
+                color=0xE02B2B,
+            )
+            await ctx.send(embed=embed)
+
+    @commands.command(name="load")
+    @checks.is_owner()
+    async def load_extension(self, ctx: Context, extension: str):
+        """Load an extension module."""
+        ext = extension if extension.startswith("cogs.") else f"cogs.{extension}"
+        try:
+            await self.bot.load_extension(ext)
+            logger.info("extension_loaded", extension=ext, author=str(ctx.author))
+            embed = discord.Embed(
+                title="Extension Loaded",
+                description=f"Successfully loaded extension `{ext}`.",
                 color=0x42F56C,
             )
             await ctx.send(embed=embed)
-        elif scope == "clear":
-            self.bot.tree.clear_commands(guild=ctx.guild)
-            await self.bot.tree.sync(guild=ctx.guild)
-            logger.info("guild_commands_cleared", guild_id=ctx.guild.id, author=str(ctx.author))
+        except Exception as e:
+            logger.error("extension_load_failed", extension=ext, error=str(e))
             embed = discord.Embed(
-                title="Guild Commands Cleared",
-                description=f"Cleared all custom application commands in **{ctx.guild.name}**.",
+                title="Load Failed",
+                description=f"Failed to load `{ext}`:\n```{type(e).__name__}: {e}```",
+                color=0xE02B2B,
+            )
+            await ctx.send(embed=embed)
+
+    @commands.command(name="unload")
+    @checks.is_owner()
+    async def unload_extension(self, ctx: Context, extension: str):
+        """Unload an extension module."""
+        ext = extension if extension.startswith("cogs.") else f"cogs.{extension}"
+        if ext == "cogs.owner":
+            embed = discord.Embed(
+                title="Action Denied",
+                description="Cannot unload the `owner` extension as it handles management.",
+                color=0xE02B2B,
+            )
+            await ctx.send(embed=embed)
+            return
+
+        try:
+            await self.bot.unload_extension(ext)
+            logger.info("extension_unloaded", extension=ext, author=str(ctx.author))
+            embed = discord.Embed(
+                title="Extension Unloaded",
+                description=f"Successfully unloaded extension `{ext}`.",
                 color=0x42F56C,
             )
             await ctx.send(embed=embed)
-        else:
-            self.bot.tree.copy_global_to(guild=ctx.guild)
-            synced = await self.bot.tree.sync(guild=ctx.guild)
+        except Exception as e:
+            logger.error("extension_unload_failed", extension=ext, error=str(e))
+            embed = discord.Embed(
+                title="Unload Failed",
+                description=f"Failed to unload `{ext}`:\n```{type(e).__name__}: {e}```",
+                color=0xE02B2B,
+            )
+            await ctx.send(embed=embed)
+
+    @commands.command(name="reload")
+    @checks.is_owner()
+    async def reload_extension(self, ctx: Context, extension: str = "all"):
+        """Reload an extension module or all modules."""
+        if extension.lower() == "all":
+            loaded_extensions = list(self.bot.extensions.keys())
+            reloaded: list[str] = []
+            failed: list[str] = []
+
+            for ext in loaded_extensions:
+                try:
+                    await self.bot.reload_extension(ext)
+                    reloaded.append(ext)
+                except Exception as e:
+                    logger.error("extension_reload_failed", extension=ext, error=str(e))
+                    failed.append(f"`{ext}` ({type(e).__name__})")
+
             logger.info(
-                "guild_commands_synced",
-                count=len(synced),
-                guild_id=ctx.guild.id,
+                "all_extensions_reloaded",
+                reloaded_count=len(reloaded),
+                failed_count=len(failed),
                 author=str(ctx.author),
             )
+            description = f"Successfully reloaded `{len(reloaded)}` extension(s)."
+            if failed:
+                description += "\nFailed extensions:\n" + "\n".join(failed)
+
             embed = discord.Embed(
-                title="Guild Sync Complete",
-                description=(
-                    f"Successfully synced `{len(synced)}` commands to **{ctx.guild.name}**."
-                ),
+                title="Reload Complete",
+                description=description,
+                color=0x42F56C if not failed else 0xF59E42,
+            )
+            await ctx.send(embed=embed)
+            return
+
+        ext = extension if extension.startswith("cogs.") else f"cogs.{extension}"
+        try:
+            await self.bot.reload_extension(ext)
+            logger.info("extension_reloaded", extension=ext, author=str(ctx.author))
+            embed = discord.Embed(
+                title="Extension Reloaded",
+                description=f"Successfully reloaded extension `{ext}`.",
                 color=0x42F56C,
             )
             await ctx.send(embed=embed)
+        except Exception as e:
+            logger.error("extension_reload_failed", extension=ext, error=str(e))
+            embed = discord.Embed(
+                title="Reload Failed",
+                description=f"Failed to reload `{ext}`:\n```{type(e).__name__}: {e}```",
+                color=0xE02B2B,
+            )
+            await ctx.send(embed=embed)
+
+    @commands.command(name="cogs", aliases=["extensions", "modules"])
+    @checks.is_owner()
+    async def list_cogs(self, ctx: Context):
+        """List all currently loaded cogs and extensions."""
+        cogs_list = []
+        for name, cog in self.bot.cogs.items():
+            command_count = len(cog.get_commands())
+            cogs_list.append(f"• **{name}** (`{command_count}` commands)")
+
+        extensions_list = [f"`{ext}`" for ext in self.bot.extensions]
+
+        embed = discord.Embed(
+            title="Loaded Cogs & Extensions",
+            color=0x42F56C,
+        )
+        embed.add_field(
+            name=f"Active Cogs ({len(cogs_list)})",
+            value="\n".join(cogs_list) if cogs_list else "None",
+            inline=False,
+        )
+        embed.add_field(
+            name=f"Active Extensions ({len(extensions_list)})",
+            value=", ".join(extensions_list) if extensions_list else "None",
+            inline=False,
+        )
+        await ctx.send(embed=embed)
 
     @commands.command(name="shutdown", aliases=["sd", "sleep"])
     @checks.is_owner()

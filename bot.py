@@ -5,6 +5,7 @@ import os
 import platform
 import random
 import sys
+from datetime import UTC, datetime
 
 import discord
 from discord.ext import commands, tasks
@@ -31,6 +32,7 @@ class DiscordBot(commands.Bot):
             help_command=None,
         )
         self.config: BotConfig = bot_config
+        self.start_time: datetime = datetime.now(UTC)
 
     async def load_cogs(self) -> None:
         """
