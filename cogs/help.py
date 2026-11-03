@@ -1,4 +1,4 @@
-"""Stores help command of Bot"""
+"""Help command for TG9 Bot."""
 
 import discord
 from discord.ext import commands
@@ -10,14 +10,15 @@ class Help(commands.Cog, name="help"):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
-    @commands.hybrid_command(name="help", description="Get list of all commands")
+    @commands.hybrid_command(name="help", description="List all available commands")
     async def help(self, ctx):
-        """List all commands from every Cog the bot has loaded."""
-        # Get the bot prefix from the configuration
-        prefix = self.bot.config["bot_prefix"]
+        """List all commands from every loaded cog."""
+        prefix = getattr(self.bot.config, "bot_prefix", "Tg9 ")
 
         embed = discord.Embed(
-            title="Help", description="List of available commands:", color=0x42F56C
+            title="Help",
+            description="List of available commands:",
+            color=0x42F56C,
         )
 
         for cog_name in self.bot.cogs:
@@ -32,11 +33,11 @@ class Help(commands.Cog, name="help"):
                 f"```{prefix}{n} - {h}```"
                 for n, h in zip(command_list, command_description, strict=False)
             )
-            embed.add_field(name=f"{cog_name.capitalize()}", value=f"{help_text}", inline=False)
+            embed.add_field(name=cog_name.capitalize(), value=help_text, inline=False)
 
         await ctx.send(embed=embed)
 
 
 async def setup(bot: commands.Bot):
-    """Add Help commands to cogs"""
+    """Register Help cog."""
     await bot.add_cog(Help(bot))

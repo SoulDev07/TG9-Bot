@@ -1,10 +1,10 @@
-"""Stores Owner commands of Bot"""
+"""Owner administrative commands."""
 
 import discord
 from discord.ext import commands
 from discord.ext.commands import Context
 
-from helpers import checks, json_manager
+from helpers import checks
 from helpers.logger import get_logger
 
 logger = get_logger()
@@ -19,16 +19,7 @@ class Owner(commands.Cog, name="owner"):
     @commands.command(name="sync")
     @checks.is_owner()
     async def sync(self, ctx: Context, scope: str | None = None):
-        """
-        Sync application command tree.
-
-        Scope options:
-        - None / 'guild': Sync to current guild (copies global commands).
-        - 'global': Sync commands globally across Discord.
-        - 'clear': Clear commands in current guild and sync.
-        - 'clearglobal': Clear global commands and sync.
-        - <guild_id>: Sync to a specific target guild ID.
-        """
+        """Sync application command tree across guild, global, or target guild scopes."""
         try:
             if scope == "global":
                 synced = await self.bot.tree.sync()
@@ -257,7 +248,7 @@ class Owner(commands.Cog, name="owner"):
     @commands.command(name="shutdown", aliases=["sd", "sleep"])
     @checks.is_owner()
     async def shutdown(self, ctx: Context):
-        """Make the bot shutdown"""
+        """Terminate the bot process safely."""
         logger.info("shutdown_invoked", author=str(ctx.author))
         embed = discord.Embed(description="Shutting down...", color=0x42F56C)
         await ctx.send(embed=embed)
@@ -266,20 +257,27 @@ class Owner(commands.Cog, name="owner"):
     @commands.group(name="blacklist")
     @checks.is_owner()
     async def blacklist(self, ctx: Context):
-        """Lets you add or remove a user from not being able to use the bot."""
+        """Manage global bot user blacklist."""
         if ctx.invoked_subcommand is None:
-            blacklist_data = json_manager.load_blacklist()
+            entries = await self.bot.blacklist_repo.get_all()
+            ids = [str(entry.user_id) for entry in entries]
             embed = discord.Embed(
-                title=f"There are currently {len(blacklist_data['ids'])} blacklisted",
-                description=f"{', '.join(str(user_id) for user_id in blacklist_data['ids'])}",
+                title=f"There are currently {len(ids)} blacklisted",
+                description=f"{', '.join(ids)}" if ids else "No users are currently blacklisted.",
                 color=0x0000FF,
             )
             await ctx.send(embed=embed)
 
     @blacklist.command(name="add")
     @checks.is_owner()
-    async def blacklist_add(self, ctx: Context, member: discord.Member | None = None):
-        """Make a user unable to use the bot."""
+    async def blacklist_add(
+        self,
+        ctx: Context,
+        member: discord.Member | None = None,
+        *,
+        reason: str = "No reason specified",
+    ):
+        """Add a user to the global blacklist."""
         if member is None:
             embed = discord.Embed(
                 title="Error!",
@@ -291,8 +289,7 @@ class Owner(commands.Cog, name="owner"):
 
         user_id = member.id
         try:
-            blacklist_data = json_manager.load_blacklist()
-            if user_id in blacklist_data["ids"]:
+            if await self.bot.blacklist_repo.is_blacklisted(user_id):
                 embed = discord.Embed(
                     title="Error!",
                     description=f"**{member.name}** is already in the blacklist.",
@@ -301,17 +298,16 @@ class Owner(commands.Cog, name="owner"):
                 await ctx.send(embed=embed)
                 return
 
-            json_manager.add_user_to_blacklist(user_id)
-            blacklist_data = json_manager.load_blacklist()
+            await self.bot.blacklist_repo.add(user_id, reason=reason, created_by=ctx.author.id)
+            total_count = await self.bot.blacklist_repo.count()
             logger.info("user_blacklisted", target_id=user_id, target_name=member.name)
             embed = discord.Embed(
                 title="User Blacklisted",
-                description=f"**{member.name}** has been successfully added to the blacklist",
+                description=f"**{member.name}** has been successfully added to the blacklist.",
                 color=0x42F56C,
             )
-            embed.set_footer(
-                text=f"There are now {len(blacklist_data['ids'])} users in the blacklist"
-            )
+            embed.add_field(name="Reason", value=reason, inline=False)
+            embed.set_footer(text=f"There are now {total_count} users in the blacklist")
             await ctx.send(embed=embed)
 
         except Exception as e:
@@ -329,7 +325,7 @@ class Owner(commands.Cog, name="owner"):
     @blacklist.command(name="remove")
     @checks.is_owner()
     async def blacklist_remove(self, ctx: Context, member: discord.Member | None = None):
-        """Make a user able to use the bot again."""
+        """Remove a user from the global blacklist."""
         if member is None:
             embed = discord.Embed(
                 title="Error!",
@@ -341,17 +337,24 @@ class Owner(commands.Cog, name="owner"):
 
         user_id = member.id
         try:
-            json_manager.remove_user_from_blacklist(user_id)
-            blacklist_data = json_manager.load_blacklist()
+            removed = await self.bot.blacklist_repo.remove(user_id)
+            if not removed:
+                embed = discord.Embed(
+                    title="Error!",
+                    description=f"**{member.name}** is not in the blacklist.",
+                    color=0xE02B2B,
+                )
+                await ctx.send(embed=embed)
+                return
+
+            total_count = await self.bot.blacklist_repo.count()
             logger.info("user_unblacklisted", target_id=user_id, target_name=member.name)
             embed = discord.Embed(
                 title="User removed from blacklist",
                 description=f"**{member.name}** has been successfully removed from the blacklist",
                 color=0x42F56C,
             )
-            embed.set_footer(
-                text=f"There are now {len(blacklist_data['ids'])} users in the blacklist"
-            )
+            embed.set_footer(text=f"There are now {total_count} users in the blacklist")
             await ctx.send(embed=embed)
 
         except Exception as e:
@@ -366,16 +369,12 @@ class Owner(commands.Cog, name="owner"):
     @commands.group(name="status")
     @checks.is_owner()
     async def status(self, ctx: Context):
-        """Add or Remove a status from a list of statuses"""
+        """Manage rotating presence statuses."""
         if ctx.invoked_subcommand is None:
-            statuses = (
-                self.bot.config.statuses
-                if hasattr(self.bot, "config")
-                else json_manager.load_config()["statuses"]
-            )
+            statuses = self.bot.config.statuses
             embed = discord.Embed(
                 title=f"There are currently {len(statuses)} statuses",
-                description=f"{', '.join(str(status_item) for status_item in statuses)}",
+                description=f"{', '.join(str(item) for item in statuses)}",
                 color=0x0000FF,
             )
             await ctx.send(embed=embed)
@@ -383,79 +382,53 @@ class Owner(commands.Cog, name="owner"):
     @status.command(name="add")
     @checks.is_owner()
     async def status_add(self, ctx: Context, sentence: str):
-        """Add a status to the list of statuses"""
-        try:
-            current_statuses = (
-                self.bot.config.statuses
-                if hasattr(self.bot, "config")
-                else json_manager.load_config()["statuses"]
-            )
-            if sentence in current_statuses:
-                embed = discord.Embed(
-                    title="Error!",
-                    description=f"**{sentence}** is already in the statuses.",
-                    color=0xE02B2B,
-                )
-                await ctx.send(embed=embed)
-                return
-
-            json_manager.add_status_to_config(sentence)
-            if hasattr(self.bot, "config") and sentence not in self.bot.config.statuses:
-                self.bot.config.statuses.append(sentence)
-
-            statuses_count = len(self.bot.config.statuses) if hasattr(self.bot, "config") else 0
-            logger.info("status_added", status=sentence)
-            embed = discord.Embed(
-                title="Status Added",
-                description=f"**{sentence}** has been successfully added to the statuses.",
-                color=0x42F56C,
-            )
-            embed.set_footer(text=f"There are now {statuses_count} statuses.")
-            await ctx.send(embed=embed)
-
-        except Exception as e:
-            logger.error("status_add_failed", status=sentence, error=str(e))
+        """Add a status to rotating presence list."""
+        if sentence in self.bot.config.statuses:
             embed = discord.Embed(
                 title="Error!",
-                description=(
-                    f"An unknown error occurred when trying to add **{sentence}** to the statuses."
-                ),
+                description=f"**{sentence}** is already in the statuses.",
                 color=0xE02B2B,
             )
             await ctx.send(embed=embed)
+            return
+
+        self.bot.config.statuses.append(sentence)
+        logger.info("status_added", status=sentence)
+        embed = discord.Embed(
+            title="Status Added",
+            description=f"**{sentence}** has been successfully added to rotating statuses.",
+            color=0x42F56C,
+        )
+        embed.set_footer(text=f"There are now {len(self.bot.config.statuses)} statuses.")
+        await ctx.send(embed=embed)
 
     @status.command(name="remove")
     @checks.is_owner()
     async def status_remove(self, ctx: Context, sentence: str):
-        """Remove a status from the list of statuses"""
-        try:
-            json_manager.remove_status_from_config(sentence)
-            if hasattr(self.bot, "config") and sentence in self.bot.config.statuses:
-                self.bot.config.statuses.remove(sentence)
-
-            statuses_count = len(self.bot.config.statuses) if hasattr(self.bot, "config") else 0
-            logger.info("status_removed", status=sentence)
-            embed = discord.Embed(
-                title="Status removed from statuses",
-                description=f"**{sentence}** has been successfully removed from the statuses.",
-                color=0x42F56C,
-            )
-            embed.set_footer(text=f"There are now {statuses_count} statuses.")
-            await ctx.send(embed=embed)
-
-        except Exception as e:
-            logger.error("status_remove_failed", status=sentence, error=str(e))
+        """Remove a status from rotating presence list."""
+        if sentence not in self.bot.config.statuses:
             embed = discord.Embed(
                 title="Error!",
                 description=f"**{sentence}** is not in the statuses.",
                 color=0xE02B2B,
             )
             await ctx.send(embed=embed)
+            return
+
+        self.bot.config.statuses.remove(sentence)
+        logger.info("status_removed", status=sentence)
+        embed = discord.Embed(
+            title="Status Removed",
+            description=f"**{sentence}** has been successfully removed from rotating statuses.",
+            color=0x42F56C,
+        )
+        embed.set_footer(text=f"There are now {len(self.bot.config.statuses)} statuses.")
+        await ctx.send(embed=embed)
 
     @status.command(name="set")
     @checks.is_owner()
     async def status_set(self, ctx: Context, *, sentence: str):
-        """Set the status of the bot"""
+        """Set immediate bot presence."""
         try:
             await ctx.bot.change_presence(
                 status=discord.Status.idle,
@@ -480,5 +453,5 @@ class Owner(commands.Cog, name="owner"):
 
 
 async def setup(bot: commands.Bot):
-    """Add Owner commands to cogs"""
+    """Register Owner cog."""
     await bot.add_cog(Owner(bot))

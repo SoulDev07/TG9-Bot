@@ -41,6 +41,7 @@ class BotConfig(BaseSettings):
     test_guild: int | None = None
     guild_id: int | None = None
     statuses: list[str] = Field(default_factory=list)
+    database_path: str = "data/tg9.db"
     log_level: str = "INFO"
     json_logs: bool = False
     sentry_dsn: str | None = None
@@ -69,7 +70,6 @@ def load_config() -> BotConfig:
     global _config_instance
     json_defaults = _read_config_json()
 
-    # Pre-populate owners if provided as a list in config.json
     raw_owners = json_defaults.get("owners", [])
     if isinstance(raw_owners, list):
         json_defaults["owners"] = set(raw_owners)

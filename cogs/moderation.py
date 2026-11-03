@@ -72,7 +72,6 @@ class Moderation(commands.Cog, name="moderation"):
             if member.guild_permissions.administrator:
                 raise commands.CheckFailure("User has Admin permissions.")
 
-            # Attempt DM notification before the user leaves the guild
             try:
                 await member.send(
                     f"You were {action}ned from **{ctx.guild.name}** by **{ctx.author}**!\n"

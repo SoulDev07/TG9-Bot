@@ -13,11 +13,16 @@ from discord.ext.commands import Context
 
 from helpers import exceptions
 from helpers.config import BotConfig, load_config
+from helpers.db import (
+    BlacklistRepository,
+    DatabaseManager,
+    GuildRepository,
+    ModCaseRepository,
+)
 from helpers.logger import get_logger, setup_logging
 
 logger = get_logger()
 
-# Set up bot intents
 intents = discord.Intents.default()
 intents.message_content = True
 
@@ -34,12 +39,13 @@ class DiscordBot(commands.Bot):
         self.config: BotConfig = bot_config
         self.start_time: datetime = datetime.now(UTC)
 
-    async def load_cogs(self) -> None:
-        """
-        Load extension modules (cogs) into the bot.
+        self.db = DatabaseManager(db_path=bot_config.database_path)
+        self.guild_repo = GuildRepository(self.db)
+        self.blacklist_repo = BlacklistRepository(self.db)
+        self.mod_case_repo = ModCaseRepository(self.db)
 
-        This function loops through the 'cogs' directory and loads each valid extension.
-        """
+    async def load_cogs(self) -> None:
+        """Load all extension modules from the cogs directory."""
         cogs_dir = os.path.join(".", "cogs")
         if not os.path.isdir(cogs_dir):
             logger.warning("cogs_directory_missing", path=cogs_dir)
@@ -60,11 +66,7 @@ class DiscordBot(commands.Bot):
 
     @tasks.loop(minutes=60.0)
     async def status_task(self) -> None:
-        """
-        Task to change the bot's status every 60 minutes.
-
-        This function selects a random status from the config and updates the bot's presence.
-        """
+        """Rotate the bot presence based on configured statuses."""
         statuses = self.config.statuses
         if statuses:
             status = random.choice(statuses)
@@ -78,10 +80,7 @@ class DiscordBot(commands.Bot):
         await self.wait_until_ready()
 
     async def setup_hook(self) -> None:
-        """
-        Perform setup tasks before the bot connects to the gateway.
-        Loads all cogs first to ensure application commands are registered.
-        """
+        """Initialize database schema and load cogs before connecting to Discord."""
         bot_name = self.user.name if self.user else "TG9-Bot"
         logger.info(
             "bot_starting",
@@ -91,16 +90,19 @@ class DiscordBot(commands.Bot):
             system=f"{platform.system()} {platform.release()}",
         )
 
-        # Load all cogs before any sync operations
+        await self.db.initialize()
         await self.load_cogs()
 
-        # Start periodic presence update loop
         if not self.status_task.is_running():
             self.status_task.start()
 
     async def on_message(self, message: discord.Message) -> None:
         if message.author == self.user or message.author.bot:
             return
+
+        if await self.blacklist_repo.is_blacklisted(message.author.id):
+            return
+
         await self.process_commands(message)
 
     async def on_command_completion(self, ctx: Context) -> None:
@@ -191,7 +193,7 @@ class DiscordBot(commands.Bot):
 
 
 async def main() -> None:
-    """Async main entrypoint with safe lifecycle management and typed configuration."""
+    """Application entrypoint managing lifecycle and configuration."""
     bot_config = load_config()
     setup_logging(
         log_level=bot_config.log_level,
