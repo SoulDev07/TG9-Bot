@@ -4,16 +4,31 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from helpers.db.models import BlacklistEntry, GuildSettings, ModCase
+from helpers.logger import get_logger
 
 if TYPE_CHECKING:
     from helpers.db.database import DatabaseManager
 
+logger = get_logger()
+
 
 class GuildRepository:
-    """Repository handling per-guild settings, modules, and roles."""
+    """Repository handling per-guild settings, modules, and roles with in-memory caching."""
 
     def __init__(self, db: "DatabaseManager") -> None:
         self.db = db
+        self._prefix_cache: dict[int, str] = {}
+        self._module_cache: dict[tuple[int, str], bool] = {}
+
+    async def get_prefix(self, guild_id: int, default: str = "!") -> str:
+        """Fetch custom prefix from memory cache or database."""
+        if guild_id in self._prefix_cache:
+            return self._prefix_cache[guild_id]
+
+        settings = await self.get(guild_id)
+        prefix = settings.prefix if settings else default
+        self._prefix_cache[guild_id] = prefix
+        return prefix
 
     async def get(self, guild_id: int) -> GuildSettings | None:
         """Fetch settings for a guild, or return None if unconfigured."""
@@ -25,7 +40,7 @@ class GuildRepository:
             row = await cursor.fetchone()
             if not row:
                 return None
-            return GuildSettings(
+            settings = GuildSettings(
                 guild_id=row["guild_id"],
                 prefix=row["prefix"],
                 modlog_channel_id=row["modlog_channel_id"],
@@ -33,6 +48,8 @@ class GuildRepository:
                 created_at=datetime.fromisoformat(row["created_at"]),
                 updated_at=datetime.fromisoformat(row["updated_at"]),
             )
+            self._prefix_cache[guild_id] = settings.prefix
+            return settings
 
     async def get_or_create(self, guild_id: int, default_prefix: str = "!") -> GuildSettings:
         """Fetch guild settings, or provision default records if first time seen."""
@@ -61,6 +78,10 @@ class GuildRepository:
                 )
             await conn.commit()
 
+        self._prefix_cache[guild_id] = default_prefix
+        for module in ("moderation", "fun", "general"):
+            self._module_cache[(guild_id, module)] = True
+
         return GuildSettings(
             guild_id=guild_id,
             prefix=default_prefix,
@@ -83,6 +104,7 @@ class GuildRepository:
                 (prefix, now_iso, guild_id),
             )
             await conn.commit()
+        self._prefix_cache[guild_id] = prefix
 
     async def set_modlog_channel(self, guild_id: int, channel_id: int | None) -> None:
         """Set or clear the designated moderation audit log channel."""
@@ -114,18 +136,23 @@ class GuildRepository:
 
     async def is_module_enabled(self, guild_id: int, module: str) -> bool:
         """Check whether a specific feature module is enabled in a guild."""
+        cache_key = (guild_id, module.lower())
+        if cache_key in self._module_cache:
+            return self._module_cache[cache_key]
+
         async with await self.db.get_connection() as conn:
             cursor = await conn.execute(
                 "SELECT enabled FROM guild_modules WHERE guild_id = ? AND module = ?",
                 (guild_id, module.lower()),
             )
             row = await cursor.fetchone()
-            if row is None:
-                return True
-            return bool(row["enabled"])
+            enabled = bool(row["enabled"]) if row is not None else True
+            self._module_cache[cache_key] = enabled
+            return enabled
 
     async def set_module_enabled(self, guild_id: int, module: str, enabled: bool) -> None:
         """Toggle an individual module on or off for a guild."""
+        normalized_module = module.lower()
         async with await self.db.get_connection() as conn:
             await conn.execute(
                 """
@@ -133,19 +160,34 @@ class GuildRepository:
                 VALUES (?, ?, ?)
                 ON CONFLICT(guild_id, module) DO UPDATE SET enabled = excluded.enabled
                 """,
-                (guild_id, module.lower(), int(enabled)),
+                (guild_id, normalized_module, int(enabled)),
             )
             await conn.commit()
+        self._module_cache[(guild_id, normalized_module)] = enabled
 
 
 class BlacklistRepository:
-    """Repository handling global user blacklists."""
+    """Repository handling global user blacklists with in-memory caching."""
 
     def __init__(self, db: "DatabaseManager") -> None:
         self.db = db
+        self._cache: set[int] = set()
+        self._cache_warmed = False
+
+    async def warm_cache(self) -> None:
+        """Pre-populate the in-memory blacklist cache on startup."""
+        async with await self.db.get_connection() as conn:
+            cursor = await conn.execute("SELECT user_id FROM blacklist")
+            rows = await cursor.fetchall()
+            self._cache = {row["user_id"] for row in rows}
+            self._cache_warmed = True
+        logger.info("blacklist_cache_warmed", count=len(self._cache))
 
     async def is_blacklisted(self, user_id: int) -> bool:
         """Check if a user is currently blacklisted from using the bot."""
+        if self._cache_warmed:
+            return user_id in self._cache
+
         async with await self.db.get_connection() as conn:
             cursor = await conn.execute(
                 "SELECT 1 FROM blacklist WHERE user_id = ?",
@@ -173,6 +215,7 @@ class BlacklistRepository:
             )
             await conn.commit()
 
+        self._cache.add(user_id)
         return BlacklistEntry(
             user_id=user_id,
             reason=reason,
@@ -188,7 +231,11 @@ class BlacklistRepository:
                 (user_id,),
             )
             await conn.commit()
-            return cursor.rowcount > 0
+            removed = cursor.rowcount > 0
+
+        if removed:
+            self._cache.discard(user_id)
+        return removed
 
     async def get_all(self) -> list[BlacklistEntry]:
         """Fetch all blacklisted user records."""
@@ -213,6 +260,9 @@ class BlacklistRepository:
 
     async def count(self) -> int:
         """Count total blacklisted users."""
+        if self._cache_warmed:
+            return len(self._cache)
+
         async with await self.db.get_connection() as conn:
             cursor = await conn.execute("SELECT COUNT(*) AS count FROM blacklist")
             row = await cursor.fetchone()
@@ -248,12 +298,22 @@ class ModCaseRepository:
         reason: str = "Not specified",
         message_id: int | None = None,
     ) -> ModCase:
-        """Create a new sequentially numbered moderation case."""
-        case_number = await self.get_next_case_number(guild_id)
+        """Create a new sequentially numbered moderation case atomically."""
         now = datetime.now(UTC)
         now_iso = now.isoformat()
 
         async with await self.db.get_connection() as conn:
+            cursor = await conn.execute(
+                """
+                SELECT COALESCE(MAX(case_number), 0) + 1 AS next_case
+                FROM mod_cases
+                WHERE guild_id = ?
+                """,
+                (guild_id,),
+            )
+            row = await cursor.fetchone()
+            case_number = row["next_case"] if row else 1
+
             cursor = await conn.execute(
                 """
                 INSERT INTO mod_cases

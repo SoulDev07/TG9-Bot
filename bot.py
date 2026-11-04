@@ -27,12 +27,22 @@ intents = discord.Intents.default()
 intents.message_content = True
 
 
+async def get_prefix(bot: "DiscordBot", message: discord.Message) -> list[str]:
+    """Dynamically resolve command prefixes per guild with fallback to default."""
+    default_prefix = bot.config.bot_prefix
+    if not message.guild:
+        return commands.when_mentioned_or(default_prefix)(bot, message)
+
+    prefix = await bot.guild_repo.get_prefix(message.guild.id, default=default_prefix)
+    return commands.when_mentioned_or(prefix)(bot, message)
+
+
 class DiscordBot(commands.Bot):
     """Core TG9 Bot instance managing cogs and lifecycle events."""
 
     def __init__(self, bot_config: BotConfig) -> None:
         super().__init__(
-            command_prefix=commands.when_mentioned_or(bot_config.bot_prefix),
+            command_prefix=get_prefix,
             intents=intents,
             help_command=None,
         )
@@ -80,7 +90,7 @@ class DiscordBot(commands.Bot):
         await self.wait_until_ready()
 
     async def setup_hook(self) -> None:
-        """Initialize database schema and load cogs before connecting to Discord."""
+        """Initialize database schema, warm caches, and load cogs before connecting."""
         bot_name = self.user.name if self.user else "TG9-Bot"
         logger.info(
             "bot_starting",
@@ -91,10 +101,40 @@ class DiscordBot(commands.Bot):
         )
 
         await self.db.initialize()
+        await self.blacklist_repo.warm_cache()
         await self.load_cogs()
 
         if not self.status_task.is_running():
             self.status_task.start()
+
+    async def close(self) -> None:
+        """Gracefully terminate background tasks, database connections, and bot."""
+        if self.status_task.is_running():
+            self.status_task.cancel()
+        await self.db.close()
+        await super().close()
+
+    async def on_guild_join(self, guild: discord.Guild) -> None:
+        """Provision default settings when joining a new server."""
+        settings = await self.guild_repo.get_or_create(
+            guild.id,
+            default_prefix=self.config.bot_prefix,
+        )
+        logger.info(
+            "guild_joined",
+            guild_name=guild.name,
+            guild_id=guild.id,
+            member_count=guild.member_count,
+            prefix=settings.prefix,
+        )
+
+    async def on_guild_remove(self, guild: discord.Guild) -> None:
+        """Handle departure from a guild."""
+        logger.info(
+            "guild_removed",
+            guild_name=guild.name,
+            guild_id=guild.id,
+        )
 
     async def on_message(self, message: discord.Message) -> None:
         if message.author == self.user or message.author.bot:
@@ -173,6 +213,17 @@ class DiscordBot(commands.Bot):
             embed = discord.Embed(
                 title="Cooldown!",
                 description=f"You can use this command again in {' '.join(time_parts)}.",
+                color=0xE02B2B,
+            )
+            await ctx.send(embed=embed)
+
+        elif isinstance(error, exceptions.ModuleDisabled):
+            embed = discord.Embed(
+                title="Module Disabled",
+                description=(
+                    f"The **{error.module_name.capitalize()}** module is currently disabled "
+                    "on this server."
+                ),
                 color=0xE02B2B,
             )
             await ctx.send(embed=embed)

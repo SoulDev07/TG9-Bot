@@ -32,7 +32,12 @@ class General(commands.Cog, name="general"):
         guilds_count = len(self.bot.guilds)
         total_members = sum(guild.member_count or 0 for guild in self.bot.guilds)
 
-        prefix = getattr(self.bot.config, "bot_prefix", "Tg9 ")
+        if ctx.guild:
+            prefix = await self.bot.guild_repo.get_prefix(
+                ctx.guild.id, default=getattr(self.bot.config, "bot_prefix", "Tg9 ")
+            )
+        else:
+            prefix = getattr(self.bot.config, "bot_prefix", "Tg9 ")
 
         embed = discord.Embed(
             title="TG9 Bot — Status & Information",
@@ -82,6 +87,56 @@ class General(commands.Cog, name="general"):
         result_embed.add_field(name="Gateway Latency", value=f"`{gateway_ms}ms`", inline=True)
         result_embed.add_field(name="API Roundtrip", value=f"`{roundtrip_ms}ms`", inline=True)
         await message.edit(embed=result_embed)
+
+    @commands.hybrid_command(
+        name="prefix",
+        description="View or set the custom command prefix for this server",
+    )
+    @commands.guild_only()
+    async def prefix(self, ctx: Context, *, new_prefix: str | None = None):
+        """View or configure the server command prefix."""
+        settings = await self.bot.guild_repo.get_or_create(
+            ctx.guild.id,
+            default_prefix=self.bot.config.bot_prefix,
+        )
+
+        if new_prefix is None:
+            embed = discord.Embed(
+                title="Server Prefix",
+                description=f"Current prefix for **{ctx.guild.name}** is `{settings.prefix}`",
+                color=0x42F56C,
+            )
+            await ctx.send(embed=embed)
+            return
+
+        is_owner = self.bot.config.is_owner(ctx.author.id)
+        has_manage_guild = ctx.author.guild_permissions.manage_guild
+        if not (has_manage_guild or is_owner):
+            embed = discord.Embed(
+                title="Permission Denied",
+                description="You need `Manage Server` permission to change the bot prefix.",
+                color=0xE02B2B,
+            )
+            await ctx.send(embed=embed)
+            return
+
+        clean_prefix = new_prefix.strip()
+        if not clean_prefix or len(clean_prefix) > 10:
+            embed = discord.Embed(
+                title="Invalid Prefix",
+                description="Prefix length must be between 1 and 10 characters.",
+                color=0xE02B2B,
+            )
+            await ctx.send(embed=embed)
+            return
+
+        await self.bot.guild_repo.update_prefix(ctx.guild.id, clean_prefix)
+        embed = discord.Embed(
+            title="Prefix Updated",
+            description=f"The command prefix for **{ctx.guild.name}** is now `{clean_prefix}`.",
+            color=0x42F56C,
+        )
+        await ctx.send(embed=embed)
 
     @commands.hybrid_command(
         name="server",

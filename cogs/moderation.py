@@ -4,12 +4,25 @@ import discord
 from discord.ext import commands
 from discord.ext.commands import Context
 
+from helpers import exceptions
+
 
 class Moderation(commands.Cog, name="moderation"):
     """Moderation Commands"""
 
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+
+    async def cog_check(self, ctx: Context) -> bool:
+        """Verify the moderation module is enabled for the invoking guild."""
+        if not ctx.guild:
+            return True
+        if ctx.bot.config.is_owner(ctx.author.id) or ctx.author.guild_permissions.administrator:
+            return True
+        is_enabled = await ctx.bot.guild_repo.is_module_enabled(ctx.guild.id, "moderation")
+        if not is_enabled:
+            raise exceptions.ModuleDisabled("moderation")
+        return True
 
     @commands.hybrid_command(
         name="say",

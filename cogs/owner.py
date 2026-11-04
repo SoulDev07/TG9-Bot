@@ -273,26 +273,26 @@ class Owner(commands.Cog, name="owner"):
     async def blacklist_add(
         self,
         ctx: Context,
-        member: discord.Member | None = None,
+        user: discord.User | None = None,
         *,
         reason: str = "No reason specified",
     ):
         """Add a user to the global blacklist."""
-        if member is None:
+        if user is None:
             embed = discord.Embed(
                 title="Error!",
-                description="Please specify a valid member to add to the blacklist.",
+                description="Please specify a valid user to add to the blacklist.",
                 color=0xE02B2B,
             )
             await ctx.send(embed=embed)
             return
 
-        user_id = member.id
+        user_id = user.id
         try:
             if await self.bot.blacklist_repo.is_blacklisted(user_id):
                 embed = discord.Embed(
                     title="Error!",
-                    description=f"**{member.name}** is already in the blacklist.",
+                    description=f"**{user.name}** is already in the blacklist.",
                     color=0xE02B2B,
                 )
                 await ctx.send(embed=embed)
@@ -300,10 +300,10 @@ class Owner(commands.Cog, name="owner"):
 
             await self.bot.blacklist_repo.add(user_id, reason=reason, created_by=ctx.author.id)
             total_count = await self.bot.blacklist_repo.count()
-            logger.info("user_blacklisted", target_id=user_id, target_name=member.name)
+            logger.info("user_blacklisted", target_id=user_id, target_name=user.name)
             embed = discord.Embed(
                 title="User Blacklisted",
-                description=f"**{member.name}** has been successfully added to the blacklist.",
+                description=f"**{user.name}** has been successfully added to the blacklist.",
                 color=0x42F56C,
             )
             embed.add_field(name="Reason", value=reason, inline=False)
@@ -316,7 +316,7 @@ class Owner(commands.Cog, name="owner"):
                 title="Error!",
                 description=(
                     "An unknown error occurred when trying to add "
-                    f"**{member.name}** to the blacklist."
+                    f"**{user.name}** to the blacklist."
                 ),
                 color=0xE02B2B,
             )
@@ -324,34 +324,34 @@ class Owner(commands.Cog, name="owner"):
 
     @blacklist.command(name="remove")
     @checks.is_owner()
-    async def blacklist_remove(self, ctx: Context, member: discord.Member | None = None):
+    async def blacklist_remove(self, ctx: Context, user: discord.User | None = None):
         """Remove a user from the global blacklist."""
-        if member is None:
+        if user is None:
             embed = discord.Embed(
                 title="Error!",
-                description="Please specify a valid member to remove from the blacklist.",
+                description="Please specify a valid user to remove from the blacklist.",
                 color=0xE02B2B,
             )
             await ctx.send(embed=embed)
             return
 
-        user_id = member.id
+        user_id = user.id
         try:
             removed = await self.bot.blacklist_repo.remove(user_id)
             if not removed:
                 embed = discord.Embed(
                     title="Error!",
-                    description=f"**{member.name}** is not in the blacklist.",
+                    description=f"**{user.name}** is not in the blacklist.",
                     color=0xE02B2B,
                 )
                 await ctx.send(embed=embed)
                 return
 
             total_count = await self.bot.blacklist_repo.count()
-            logger.info("user_unblacklisted", target_id=user_id, target_name=member.name)
+            logger.info("user_unblacklisted", target_id=user_id, target_name=user.name)
             embed = discord.Embed(
                 title="User removed from blacklist",
-                description=f"**{member.name}** has been successfully removed from the blacklist",
+                description=f"**{user.name}** has been successfully removed from the blacklist",
                 color=0x42F56C,
             )
             embed.set_footer(text=f"There are now {total_count} users in the blacklist")
@@ -361,7 +361,7 @@ class Owner(commands.Cog, name="owner"):
             logger.error("blacklist_remove_failed", target_id=user_id, error=str(e))
             embed = discord.Embed(
                 title="Error!",
-                description=f"**{member.name}** is not in the blacklist.",
+                description=f"**{user.name}** is not in the blacklist.",
                 color=0xE02B2B,
             )
             await ctx.send(embed=embed)
