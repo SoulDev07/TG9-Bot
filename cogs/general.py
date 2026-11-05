@@ -110,11 +110,16 @@ class General(commands.Cog, name="general"):
             return
 
         is_owner = self.bot.config.is_owner(ctx.author.id)
+        is_guild_owner = ctx.author.id == ctx.guild.owner_id
         has_manage_guild = ctx.author.guild_permissions.manage_guild
-        if not (has_manage_guild or is_owner):
+        has_admin_role = await self.bot.guild_repo.has_role_type(ctx.author, "admin")
+        if not (is_owner or is_guild_owner or has_manage_guild or has_admin_role):
             embed = discord.Embed(
                 title="Permission Denied",
-                description="You need `Manage Server` permission to change the bot prefix.",
+                description=(
+                    "You need `Manage Server` permission or an Administrator role "
+                    "to change the bot prefix."
+                ),
                 color=0xE02B2B,
             )
             await ctx.send(embed=embed)

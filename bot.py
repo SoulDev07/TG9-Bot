@@ -1,5 +1,7 @@
 """TG9 Discord Bot - Main Entry Point."""
 
+from __future__ import annotations
+
 import asyncio
 import os
 import platform
@@ -8,6 +10,7 @@ import sys
 from datetime import UTC, datetime
 
 import discord
+from discord import app_commands
 from discord.ext import commands, tasks
 from discord.ext.commands import Context
 
@@ -27,7 +30,7 @@ intents = discord.Intents.default()
 intents.message_content = True
 
 
-async def get_prefix(bot: "DiscordBot", message: discord.Message) -> list[str]:
+async def get_prefix(bot: DiscordBot, message: discord.Message) -> list[str]:
     """Dynamically resolve command prefixes per guild with fallback to default."""
     default_prefix = bot.config.bot_prefix
     if not message.guild:
@@ -35,6 +38,112 @@ async def get_prefix(bot: "DiscordBot", message: discord.Message) -> list[str]:
 
     prefix = await bot.guild_repo.get_prefix(message.guild.id, default=default_prefix)
     return commands.when_mentioned_or(prefix)(bot, message)
+
+
+class BotCommandTree(app_commands.CommandTree):
+    """Custom command tree providing global interaction guards and error dispatching."""
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        """Global guard for slash commands, modals, and component interactions."""
+        if interaction.user.bot:
+            return False
+
+        bot: DiscordBot = interaction.client  # type: ignore
+        if await bot.blacklist_repo.is_blacklisted(interaction.user.id):
+            embed = discord.Embed(
+                title="Access Denied",
+                description="You are globally blacklisted from interacting with this bot.",
+                color=0xE02B2B,
+            )
+            if not interaction.response.is_done():
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+            return False
+
+        return True
+
+    async def on_error(
+        self,
+        interaction: discord.Interaction,
+        error: app_commands.AppCommandError,
+    ) -> None:
+        """Centralized application command error handler for slash commands."""
+        actual_error = getattr(error, "original", error)
+
+        if isinstance(actual_error, exceptions.HierarchyError):
+            embed = discord.Embed(
+                title="Hierarchy Violation",
+                description=str(actual_error),
+                color=0xE02B2B,
+            )
+        elif isinstance(actual_error, exceptions.MissingRoleOrPermission):
+            embed = discord.Embed(
+                title="Permission Denied",
+                description=str(actual_error),
+                color=0xE02B2B,
+            )
+        elif isinstance(actual_error, exceptions.UserNotGuildOwner):
+            embed = discord.Embed(
+                title="Server Owner Only",
+                description="You must be the server owner to execute this command!",
+                color=0xE02B2B,
+            )
+        elif isinstance(actual_error, exceptions.ModuleDisabled):
+            embed = discord.Embed(
+                title="Module Disabled",
+                description=(
+                    f"The **{actual_error.module_name.capitalize()}** module is currently disabled "
+                    "on this server."
+                ),
+                color=0xE02B2B,
+            )
+        elif isinstance(actual_error, exceptions.UserNotOwner):
+            embed = discord.Embed(
+                description="You are not the owner of this bot!",
+                color=0xE02B2B,
+            )
+        elif isinstance(actual_error, app_commands.CommandOnCooldown):
+            embed = discord.Embed(
+                title="Cooldown!",
+                description=(
+                    f"You can use this command again in {actual_error.retry_after:.1f} seconds."
+                ),
+                color=0xE02B2B,
+            )
+        elif isinstance(actual_error, app_commands.MissingPermissions):
+            missing_perms = ", ".join(actual_error.missing_permissions)
+            embed = discord.Embed(
+                title="Error!",
+                description=(
+                    f"You are missing permission `{missing_perms}` to execute this command!"
+                ),
+                color=0xE02B2B,
+            )
+        elif isinstance(actual_error, app_commands.BotMissingPermissions):
+            missing_perms = ", ".join(actual_error.missing_permissions)
+            embed = discord.Embed(
+                title="Error!",
+                description=(f"I am missing permission `{missing_perms}` to execute this command!"),
+                color=0xE02B2B,
+            )
+        else:
+            logger.error(
+                "app_command_error",
+                command=interaction.command.name if interaction.command else "unknown",
+                error=str(actual_error),
+            )
+            embed = discord.Embed(
+                title="Error!",
+                description="An unexpected error occurred while executing this command.",
+                color=0xE02B2B,
+            )
+
+        try:
+            if not interaction.response.is_done():
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+            else:
+                await interaction.followup.send(embed=embed, ephemeral=True)
+        except discord.HTTPException:
+            pass
 
 
 class DiscordBot(commands.Bot):
@@ -45,6 +154,7 @@ class DiscordBot(commands.Bot):
             command_prefix=get_prefix,
             intents=intents,
             help_command=None,
+            tree_cls=BotCommandTree,
         )
         self.config: BotConfig = bot_config
         self.start_time: datetime = datetime.now(UTC)
@@ -231,6 +341,30 @@ class DiscordBot(commands.Bot):
         elif isinstance(error, exceptions.UserNotOwner):
             embed = discord.Embed(
                 description="You are not the owner of this bot!",
+                color=0xE02B2B,
+            )
+            await ctx.send(embed=embed)
+
+        elif isinstance(error, exceptions.UserNotGuildOwner):
+            embed = discord.Embed(
+                title="Server Owner Only",
+                description="You must be the server owner to execute this command!",
+                color=0xE02B2B,
+            )
+            await ctx.send(embed=embed)
+
+        elif isinstance(error, exceptions.MissingRoleOrPermission):
+            embed = discord.Embed(
+                title="Permission Denied",
+                description=str(error),
+                color=0xE02B2B,
+            )
+            await ctx.send(embed=embed)
+
+        elif isinstance(error, exceptions.HierarchyError):
+            embed = discord.Embed(
+                title="Hierarchy Violation",
+                description=str(error),
                 color=0xE02B2B,
             )
             await ctx.send(embed=embed)

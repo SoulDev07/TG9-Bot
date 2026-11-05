@@ -7,6 +7,8 @@ from helpers.db.models import BlacklistEntry, GuildSettings, ModCase
 from helpers.logger import get_logger
 
 if TYPE_CHECKING:
+    import discord
+
     from helpers.db.database import DatabaseManager
 
 logger = get_logger()
@@ -19,6 +21,7 @@ class GuildRepository:
         self.db = db
         self._prefix_cache: dict[int, str] = {}
         self._module_cache: dict[tuple[int, str], bool] = {}
+        self._role_cache: dict[tuple[int, str], set[int]] = {}
 
     async def get_prefix(self, guild_id: int, default: str = "!") -> str:
         """Fetch custom prefix from memory cache or database."""
@@ -164,6 +167,84 @@ class GuildRepository:
             )
             await conn.commit()
         self._module_cache[(guild_id, normalized_module)] = enabled
+
+    async def add_role(self, guild_id: int, role_id: int, role_type: str) -> None:
+        """Assign an administrative or moderator role to a guild."""
+        normalized_type = role_type.lower()
+        # Ensure guild record exists for foreign key constraint
+        await self.get_or_create(guild_id)
+
+        async with await self.db.get_connection() as conn:
+            await conn.execute(
+                """
+                INSERT OR IGNORE INTO guild_roles (guild_id, role_id, role_type)
+                VALUES (?, ?, ?)
+                """,
+                (guild_id, role_id, normalized_type),
+            )
+            await conn.commit()
+
+        if (guild_id, normalized_type) in self._role_cache:
+            self._role_cache[(guild_id, normalized_type)].add(role_id)
+        else:
+            self._role_cache[(guild_id, normalized_type)] = {role_id}
+
+    async def remove_role(self, guild_id: int, role_id: int, role_type: str) -> bool:
+        """Remove a configured administrative or moderator role."""
+        normalized_type = role_type.lower()
+        async with await self.db.get_connection() as conn:
+            cursor = await conn.execute(
+                """
+                DELETE FROM guild_roles
+                WHERE guild_id = ? AND role_id = ? AND role_type = ?
+                """,
+                (guild_id, role_id, normalized_type),
+            )
+            await conn.commit()
+            removed = cursor.rowcount > 0
+
+        if removed and (guild_id, normalized_type) in self._role_cache:
+            self._role_cache[(guild_id, normalized_type)].discard(role_id)
+        return removed
+
+    async def get_roles(self, guild_id: int, role_type: str) -> set[int]:
+        """Fetch all configured role IDs for a role type in a guild."""
+        normalized_type = role_type.lower()
+        cache_key = (guild_id, normalized_type)
+        if cache_key in self._role_cache:
+            return set(self._role_cache[cache_key])
+
+        async with await self.db.get_connection() as conn:
+            cursor = await conn.execute(
+                "SELECT role_id FROM guild_roles WHERE guild_id = ? AND role_type = ?",
+                (guild_id, normalized_type),
+            )
+            rows = await cursor.fetchall()
+            role_ids = {row["role_id"] for row in rows}
+            self._role_cache[cache_key] = role_ids
+            return set(role_ids)
+
+    async def has_role_type(self, member: "discord.Member", role_type: str) -> bool:
+        """Check if a guild member has any configured role matching the role type."""
+        configured_roles = await self.get_roles(member.guild.id, role_type)
+        if not configured_roles:
+            return False
+        return any(role.id in configured_roles for role in member.roles)
+
+    async def get_all_roles(self, guild_id: int) -> dict[str, set[int]]:
+        """Fetch all configured roles grouped by type for a guild."""
+        async with await self.db.get_connection() as conn:
+            cursor = await conn.execute(
+                "SELECT role_id, role_type FROM guild_roles WHERE guild_id = ?",
+                (guild_id,),
+            )
+            rows = await cursor.fetchall()
+            result: dict[str, set[int]] = {"admin": set(), "mod": set()}
+            for row in rows:
+                rtype = row["role_type"].lower()
+                result.setdefault(rtype, set()).add(row["role_id"])
+                self._role_cache.setdefault((guild_id, rtype), set()).add(row["role_id"])
+            return result
 
 
 class BlacklistRepository:
