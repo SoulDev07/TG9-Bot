@@ -21,84 +21,89 @@ class Owner(commands.Cog, name="owner"):
     async def sync(self, ctx: Context, scope: str | None = None):
         """Sync application command tree across guild, global, or target guild scopes."""
         try:
-            if scope == "global":
-                synced = await self.bot.tree.sync()
-                logger.info("global_commands_synced", count=len(synced), author=str(ctx.author))
-                embed = discord.Embed(
-                    title="Global Sync Complete",
-                    description=(
-                        f"Successfully synced `{len(synced)}` application commands globally."
-                    ),
-                    color=0x42F56C,
-                )
-                await ctx.send(embed=embed)
+            match scope:
+                case "global":
+                    synced = await self.bot.tree.sync()
+                    logger.info("global_commands_synced", count=len(synced), author=str(ctx.author))
+                    embed = discord.Embed(
+                        title="Global Sync Complete",
+                        description=(
+                            f"Successfully synced `{len(synced)}` application commands globally."
+                        ),
+                        color=0x42F56C,
+                    )
+                    await ctx.send(embed=embed)
 
-            elif scope == "clearglobal":
-                self.bot.tree.clear_commands(guild=None)
-                await self.bot.tree.sync()
-                logger.info("global_commands_cleared", author=str(ctx.author))
-                embed = discord.Embed(
-                    title="Global Commands Cleared",
-                    description="Cleared all global application commands.",
-                    color=0x42F56C,
-                )
-                await ctx.send(embed=embed)
+                case "clearglobal":
+                    self.bot.tree.clear_commands(guild=None)
+                    await self.bot.tree.sync()
+                    logger.info("global_commands_cleared", author=str(ctx.author))
+                    embed = discord.Embed(
+                        title="Global Commands Cleared",
+                        description="Cleared all global application commands.",
+                        color=0x42F56C,
+                    )
+                    await ctx.send(embed=embed)
 
-            elif scope == "clear":
-                if not ctx.guild:
-                    await ctx.send("Guild-level clear can only be used within a server.")
-                    return
-                self.bot.tree.clear_commands(guild=ctx.guild)
-                await self.bot.tree.sync(guild=ctx.guild)
-                logger.info(
-                    "guild_commands_cleared",
-                    guild_id=ctx.guild.id,
-                    author=str(ctx.author),
-                )
-                embed = discord.Embed(
-                    title="Guild Commands Cleared",
-                    description=f"Cleared all application commands in **{ctx.guild.name}**.",
-                    color=0x42F56C,
-                )
-                await ctx.send(embed=embed)
+                case "clear":
+                    if not ctx.guild:
+                        await ctx.send("Guild-level clear can only be used within a server.")
+                        return
+                    self.bot.tree.clear_commands(guild=ctx.guild)
+                    await self.bot.tree.sync(guild=ctx.guild)
+                    logger.info(
+                        "guild_commands_cleared",
+                        guild_id=ctx.guild.id,
+                        author=str(ctx.author),
+                    )
+                    embed = discord.Embed(
+                        title="Guild Commands Cleared",
+                        description=f"Cleared all application commands in **{ctx.guild.name}**.",
+                        color=0x42F56C,
+                    )
+                    await ctx.send(embed=embed)
 
-            elif scope and scope.isdigit():
-                target_guild = discord.Object(id=int(scope))
-                self.bot.tree.copy_global_to(guild=target_guild)
-                synced = await self.bot.tree.sync(guild=target_guild)
-                logger.info(
-                    "target_guild_commands_synced",
-                    count=len(synced),
-                    target_guild_id=scope,
-                    author=str(ctx.author),
-                )
-                embed = discord.Embed(
-                    title="Target Guild Sync Complete",
-                    description=f"Successfully synced `{len(synced)}` commands to Guild `{scope}`.",
-                    color=0x42F56C,
-                )
-                await ctx.send(embed=embed)
+                case str() if scope.isdigit():
+                    target_guild = discord.Object(id=int(scope))
+                    self.bot.tree.copy_global_to(guild=target_guild)
+                    synced = await self.bot.tree.sync(guild=target_guild)
+                    logger.info(
+                        "target_guild_commands_synced",
+                        count=len(synced),
+                        target_guild_id=scope,
+                        author=str(ctx.author),
+                    )
+                    embed = discord.Embed(
+                        title="Target Guild Sync Complete",
+                        description=(
+                            f"Successfully synced `{len(synced)}` commands to Guild `{scope}`."
+                        ),
+                        color=0x42F56C,
+                    )
+                    await ctx.send(embed=embed)
 
-            else:
-                if not ctx.guild:
-                    await ctx.send("Cannot sync to current guild outside a server. Use `global`.")
-                    return
-                self.bot.tree.copy_global_to(guild=ctx.guild)
-                synced = await self.bot.tree.sync(guild=ctx.guild)
-                logger.info(
-                    "guild_commands_synced",
-                    count=len(synced),
-                    guild_id=ctx.guild.id,
-                    author=str(ctx.author),
-                )
-                embed = discord.Embed(
-                    title="Guild Sync Complete",
-                    description=(
-                        f"Successfully synced `{len(synced)}` commands to **{ctx.guild.name}**."
-                    ),
-                    color=0x42F56C,
-                )
-                await ctx.send(embed=embed)
+                case _:
+                    if not ctx.guild:
+                        await ctx.send(
+                            "Cannot sync to current guild outside a server. Use `global`."
+                        )
+                        return
+                    self.bot.tree.copy_global_to(guild=ctx.guild)
+                    synced = await self.bot.tree.sync(guild=ctx.guild)
+                    logger.info(
+                        "guild_commands_synced",
+                        count=len(synced),
+                        guild_id=ctx.guild.id,
+                        author=str(ctx.author),
+                    )
+                    embed = discord.Embed(
+                        title="Guild Sync Complete",
+                        description=(
+                            f"Successfully synced `{len(synced)}` commands to **{ctx.guild.name}**."
+                        ),
+                        color=0x42F56C,
+                    )
+                    await ctx.send(embed=embed)
 
         except discord.HTTPException as e:
             logger.error("sync_http_error", error=str(e), author=str(ctx.author))

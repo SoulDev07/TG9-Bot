@@ -5,6 +5,8 @@ from discord.ext import commands
 from discord.ext.commands import Context
 
 from helpers import checks, exceptions
+from helpers.embeds import EmbedFactory
+from services.moderation import ModerationService
 
 
 class Moderation(commands.Cog, name="moderation"):
@@ -43,10 +45,7 @@ class Moderation(commands.Cog, name="moderation"):
     @checks.mod_or_permissions(manage_messages=True)
     async def embed(self, ctx: Context, *, sentence: str):
         """The bot will say anything you want in embeds."""
-        embed = discord.Embed(
-            description=sentence,
-            color=0x42F56C,
-        )
+        embed = EmbedFactory.success(description=sentence)
         await ctx.send(embed=embed)
 
     @commands.hybrid_command(
@@ -63,66 +62,13 @@ class Moderation(commands.Cog, name="moderation"):
         reason: str = "Not specified",
     ):
         """Warns a user in their private messages."""
-        checks.check_hierarchy(ctx, member)
-
-        embed = discord.Embed(
+        await ModerationService.warn_member(ctx, member, reason)
+        embed = EmbedFactory.success(
             title="User Warned!",
             description=f"**{member}** was warned by **{ctx.author}**!",
-            color=0x42F56C,
+            fields=[("Reason", reason, False)],
         )
-        embed.add_field(name="Reason", value=reason, inline=False)
         await ctx.send(embed=embed)
-        try:
-            await member.send(
-                f"You were warned in **{ctx.guild.name}** by **{ctx.author}**!\nReason: {reason}"
-            )
-        except (discord.Forbidden, discord.HTTPException):
-            pass
-
-    async def kick_ban_common(
-        self,
-        ctx: Context,
-        member: discord.Member,
-        action: str,
-        reason: str,
-    ):
-        """Common logic for kick and ban commands with role hierarchy enforcement."""
-        checks.check_hierarchy(ctx, member)
-        action_verb = "kicked" if action == "kick" else "banned"
-        audit_reason = checks.get_audit_reason(ctx.author, reason)
-
-        try:
-            await member.send(
-                f"You were {action_verb} from **{ctx.guild.name}** by **{ctx.author}**!\n"
-                f"Reason: {reason}"
-            )
-        except (discord.Forbidden, discord.HTTPException):
-            pass
-
-        try:
-            if action == "kick":
-                await member.kick(reason=audit_reason)
-            elif action == "ban":
-                await member.ban(reason=audit_reason)
-
-            embed = discord.Embed(
-                title=f"User {action.capitalize()}!",
-                description=f"**{member}** was {action_verb} by **{ctx.author}**!",
-                color=0x42F56C,
-            )
-            embed.add_field(name="Reason", value=reason, inline=False)
-            await ctx.send(embed=embed)
-
-        except discord.Forbidden:
-            embed = discord.Embed(
-                title="Error!",
-                description=(
-                    f"An error occurred while trying to {action} {member.mention}. "
-                    "Make sure my role is placed higher than the target user's role."
-                ),
-                color=0xE02B2B,
-            )
-            await ctx.send(embed=embed)
 
     @commands.hybrid_command(name="kick", description="Kick a user out of the server")
     @commands.guild_only()
@@ -135,7 +81,22 @@ class Moderation(commands.Cog, name="moderation"):
         reason: str = "Not specified",
     ):
         """Kick a user out of the server."""
-        await self.kick_ban_common(ctx, member, "kick", reason)
+        try:
+            await ModerationService.kick_member(ctx, member, reason)
+            embed = EmbedFactory.success(
+                title="User Kicked!",
+                description=f"**{member}** was kicked by **{ctx.author}**!",
+                fields=[("Reason", reason, False)],
+            )
+            await ctx.send(embed=embed)
+        except discord.Forbidden:
+            embed = EmbedFactory.error(
+                description=(
+                    f"An error occurred while trying to kick {member.mention}. "
+                    "Make sure my role is placed higher than the target user's role."
+                )
+            )
+            await ctx.send(embed=embed)
 
     @commands.hybrid_command(name="ban", description="Ban a user from the server")
     @commands.guild_only()
@@ -148,7 +109,22 @@ class Moderation(commands.Cog, name="moderation"):
         reason: str = "Not specified",
     ):
         """Ban a user from the server."""
-        await self.kick_ban_common(ctx, member, "ban", reason)
+        try:
+            await ModerationService.ban_member(ctx, member, reason)
+            embed = EmbedFactory.success(
+                title="User Banned!",
+                description=f"**{member}** was banned by **{ctx.author}**!",
+                fields=[("Reason", reason, False)],
+            )
+            await ctx.send(embed=embed)
+        except discord.Forbidden:
+            embed = EmbedFactory.error(
+                description=(
+                    f"An error occurred while trying to ban {member.mention}. "
+                    "Make sure my role is placed higher than the target user's role."
+                )
+            )
+            await ctx.send(embed=embed)
 
     @commands.hybrid_command(name="purge", description="Delete a number of messages")
     @commands.guild_only()
@@ -156,19 +132,16 @@ class Moderation(commands.Cog, name="moderation"):
     async def purge(self, ctx: Context, amount: int):
         """Delete a number of messages."""
         if amount < 1:
-            embed = discord.Embed(
-                title="Error!",
-                description=f"`{amount}` is not a valid number. Must be at least 1.",
-                color=0xE02B2B,
+            embed = EmbedFactory.error(
+                description=f"`{amount}` is not a valid number. Must be at least 1."
             )
             await ctx.send(embed=embed)
             return
 
-        purged_messages = await ctx.channel.purge(limit=amount)
-        embed = discord.Embed(
+        purged_count = await ModerationService.purge_channel(ctx.channel, amount)
+        embed = EmbedFactory.success(
             title="Chat Cleared!",
-            description=(f"**{ctx.author}** cleared **{len(purged_messages)}** messages!"),
-            color=0x42F56C,
+            description=f"**{ctx.author}** cleared **{purged_count}** messages!",
         )
         await ctx.send(embed=embed, delete_after=5)
 
@@ -181,7 +154,7 @@ class Moderation(commands.Cog, name="moderation"):
     async def roles(self, ctx: Context):
         """Manage administrative and moderator roles for this server."""
         if ctx.invoked_subcommand is None:
-            embed = discord.Embed(
+            embed = EmbedFactory.info(
                 title="Server Role Configuration",
                 description=(
                     "Configure administrative and moderator roles for this server:\n"
@@ -191,7 +164,6 @@ class Moderation(commands.Cog, name="moderation"):
                     "• `/roles removemod <role>` — Remove a Moderator role\n"
                     "• `/roles list` — List all configured roles"
                 ),
-                color=0x42F56C,
             )
             await ctx.send(embed=embed)
 
@@ -201,10 +173,9 @@ class Moderation(commands.Cog, name="moderation"):
     async def add_admin_role(self, ctx: Context, role: discord.Role):
         """Designate an administrator role for this server."""
         await self.bot.guild_repo.add_role(ctx.guild.id, role.id, "admin")
-        embed = discord.Embed(
+        embed = EmbedFactory.success(
             title="Role Updated",
             description=f"Successfully added {role.mention} as an **Administrator** role.",
-            color=0x42F56C,
         )
         await ctx.send(embed=embed)
 
@@ -215,17 +186,15 @@ class Moderation(commands.Cog, name="moderation"):
         """Remove a designated administrator role from this server."""
         removed = await self.bot.guild_repo.remove_role(ctx.guild.id, role.id, "admin")
         if not removed:
-            embed = discord.Embed(
+            embed = EmbedFactory.error(
                 title="Error",
                 description=f"{role.mention} is not registered as an Administrator role.",
-                color=0xE02B2B,
             )
             await ctx.send(embed=embed)
             return
-        embed = discord.Embed(
+        embed = EmbedFactory.success(
             title="Role Removed",
             description=f"Successfully removed {role.mention} from Administrator roles.",
-            color=0x42F56C,
         )
         await ctx.send(embed=embed)
 
@@ -235,10 +204,9 @@ class Moderation(commands.Cog, name="moderation"):
     async def add_mod_role(self, ctx: Context, role: discord.Role):
         """Designate a moderator role for this server."""
         await self.bot.guild_repo.add_role(ctx.guild.id, role.id, "mod")
-        embed = discord.Embed(
+        embed = EmbedFactory.success(
             title="Role Updated",
             description=f"Successfully added {role.mention} as a **Moderator** role.",
-            color=0x42F56C,
         )
         await ctx.send(embed=embed)
 
@@ -249,17 +217,15 @@ class Moderation(commands.Cog, name="moderation"):
         """Remove a designated moderator role from this server."""
         removed = await self.bot.guild_repo.remove_role(ctx.guild.id, role.id, "mod")
         if not removed:
-            embed = discord.Embed(
+            embed = EmbedFactory.error(
                 title="Error",
                 description=f"{role.mention} is not registered as a Moderator role.",
-                color=0xE02B2B,
             )
             await ctx.send(embed=embed)
             return
-        embed = discord.Embed(
+        embed = EmbedFactory.success(
             title="Role Removed",
             description=f"Successfully removed {role.mention} from Moderator roles.",
-            color=0x42F56C,
         )
         await ctx.send(embed=embed)
 
@@ -280,19 +246,20 @@ class Moderation(commands.Cog, name="moderation"):
             if ctx.guild.get_role(rid)
         ]
 
-        embed = discord.Embed(
+        embed = EmbedFactory.create(
             title=f"Configured Roles — {ctx.guild.name}",
-            color=0x42F56C,
-        )
-        embed.add_field(
-            name="Administrator Roles",
-            value=", ".join(admin_roles) if admin_roles else "None configured",
-            inline=False,
-        )
-        embed.add_field(
-            name="Moderator Roles",
-            value=", ".join(mod_roles) if mod_roles else "None configured",
-            inline=False,
+            fields=[
+                (
+                    "Administrator Roles",
+                    ", ".join(admin_roles) if admin_roles else "None configured",
+                    False,
+                ),
+                (
+                    "Moderator Roles",
+                    ", ".join(mod_roles) if mod_roles else "None configured",
+                    False,
+                ),
+            ],
         )
         await ctx.send(embed=embed)
 

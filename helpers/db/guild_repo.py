@@ -1,24 +1,22 @@
-"""Strongly-typed asynchronous repositories for database entities."""
+"""Repository handling per-guild settings, modules, and roles with in-memory caching."""
 
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from helpers.db.models import BlacklistEntry, GuildSettings, ModCase
-from helpers.logger import get_logger
+from helpers.db.base import BaseRepository
+from helpers.db.models import GuildSettings
 
 if TYPE_CHECKING:
     import discord
 
     from helpers.db.database import DatabaseManager
 
-logger = get_logger()
 
-
-class GuildRepository:
+class GuildRepository(BaseRepository):
     """Repository handling per-guild settings, modules, and roles with in-memory caching."""
 
     def __init__(self, db: "DatabaseManager") -> None:
-        self.db = db
+        super().__init__(db)
         self._prefix_cache: dict[int, str] = {}
         self._module_cache: dict[tuple[int, str], bool] = {}
         self._role_cache: dict[tuple[int, str], set[int]] = {}
@@ -171,7 +169,6 @@ class GuildRepository:
     async def add_role(self, guild_id: int, role_id: int, role_type: str) -> None:
         """Assign an administrative or moderator role to a guild."""
         normalized_type = role_type.lower()
-        # Ensure guild record exists for foreign key constraint
         await self.get_or_create(guild_id)
 
         async with await self.db.get_connection() as conn:
@@ -245,239 +242,3 @@ class GuildRepository:
                 result.setdefault(rtype, set()).add(row["role_id"])
                 self._role_cache.setdefault((guild_id, rtype), set()).add(row["role_id"])
             return result
-
-
-class BlacklistRepository:
-    """Repository handling global user blacklists with in-memory caching."""
-
-    def __init__(self, db: "DatabaseManager") -> None:
-        self.db = db
-        self._cache: set[int] = set()
-        self._cache_warmed = False
-
-    async def warm_cache(self) -> None:
-        """Pre-populate the in-memory blacklist cache on startup."""
-        async with await self.db.get_connection() as conn:
-            cursor = await conn.execute("SELECT user_id FROM blacklist")
-            rows = await cursor.fetchall()
-            self._cache = {row["user_id"] for row in rows}
-            self._cache_warmed = True
-        logger.info("blacklist_cache_warmed", count=len(self._cache))
-
-    async def is_blacklisted(self, user_id: int) -> bool:
-        """Check if a user is currently blacklisted from using the bot."""
-        if self._cache_warmed:
-            return user_id in self._cache
-
-        async with await self.db.get_connection() as conn:
-            cursor = await conn.execute(
-                "SELECT 1 FROM blacklist WHERE user_id = ?",
-                (user_id,),
-            )
-            row = await cursor.fetchone()
-            return row is not None
-
-    async def add(
-        self,
-        user_id: int,
-        reason: str = "No reason specified",
-        created_by: int | None = None,
-    ) -> BlacklistEntry:
-        """Add a user to the global blacklist."""
-        now = datetime.now(UTC)
-        now_iso = now.isoformat()
-        async with await self.db.get_connection() as conn:
-            await conn.execute(
-                """
-                INSERT OR REPLACE INTO blacklist (user_id, reason, created_at, created_by)
-                VALUES (?, ?, ?, ?)
-                """,
-                (user_id, reason, now_iso, created_by),
-            )
-            await conn.commit()
-
-        self._cache.add(user_id)
-        return BlacklistEntry(
-            user_id=user_id,
-            reason=reason,
-            created_at=now,
-            created_by=created_by,
-        )
-
-    async def remove(self, user_id: int) -> bool:
-        """Remove a user from the global blacklist. Returns True if deleted."""
-        async with await self.db.get_connection() as conn:
-            cursor = await conn.execute(
-                "DELETE FROM blacklist WHERE user_id = ?",
-                (user_id,),
-            )
-            await conn.commit()
-            removed = cursor.rowcount > 0
-
-        if removed:
-            self._cache.discard(user_id)
-        return removed
-
-    async def get_all(self) -> list[BlacklistEntry]:
-        """Fetch all blacklisted user records."""
-        async with await self.db.get_connection() as conn:
-            cursor = await conn.execute(
-                """
-                SELECT user_id, reason, created_at, created_by
-                FROM blacklist
-                ORDER BY created_at DESC
-                """
-            )
-            rows = await cursor.fetchall()
-            return [
-                BlacklistEntry(
-                    user_id=row["user_id"],
-                    reason=row["reason"],
-                    created_at=datetime.fromisoformat(row["created_at"]),
-                    created_by=row["created_by"],
-                )
-                for row in rows
-            ]
-
-    async def count(self) -> int:
-        """Count total blacklisted users."""
-        if self._cache_warmed:
-            return len(self._cache)
-
-        async with await self.db.get_connection() as conn:
-            cursor = await conn.execute("SELECT COUNT(*) AS count FROM blacklist")
-            row = await cursor.fetchone()
-            return row["count"] if row else 0
-
-
-class ModCaseRepository:
-    """Repository handling sequential moderation case records."""
-
-    def __init__(self, db: "DatabaseManager") -> None:
-        self.db = db
-
-    async def get_next_case_number(self, guild_id: int) -> int:
-        """Calculate the next sequential case number for a given guild."""
-        async with await self.db.get_connection() as conn:
-            cursor = await conn.execute(
-                """
-                SELECT COALESCE(MAX(case_number), 0) + 1 AS next_case
-                FROM mod_cases
-                WHERE guild_id = ?
-                """,
-                (guild_id,),
-            )
-            row = await cursor.fetchone()
-            return row["next_case"] if row else 1
-
-    async def create_case(
-        self,
-        guild_id: int,
-        action: str,
-        user_id: int,
-        moderator_id: int,
-        reason: str = "Not specified",
-        message_id: int | None = None,
-    ) -> ModCase:
-        """Create a new sequentially numbered moderation case atomically."""
-        now = datetime.now(UTC)
-        now_iso = now.isoformat()
-
-        async with await self.db.get_connection() as conn:
-            cursor = await conn.execute(
-                """
-                SELECT COALESCE(MAX(case_number), 0) + 1 AS next_case
-                FROM mod_cases
-                WHERE guild_id = ?
-                """,
-                (guild_id,),
-            )
-            row = await cursor.fetchone()
-            case_number = row["next_case"] if row else 1
-
-            cursor = await conn.execute(
-                """
-                INSERT INTO mod_cases
-                (guild_id, case_number, action, user_id, moderator_id,
-                 reason, message_id, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    guild_id,
-                    case_number,
-                    action.lower(),
-                    user_id,
-                    moderator_id,
-                    reason,
-                    message_id,
-                    now_iso,
-                ),
-            )
-            await conn.commit()
-            case_id = cursor.lastrowid
-
-        return ModCase(
-            id=case_id,
-            guild_id=guild_id,
-            case_number=case_number,
-            action=action.lower(),
-            user_id=user_id,
-            moderator_id=moderator_id,
-            reason=reason,
-            message_id=message_id,
-            created_at=now,
-        )
-
-    async def get_case(self, guild_id: int, case_number: int) -> ModCase | None:
-        """Fetch a specific moderation case by guild and case number."""
-        async with await self.db.get_connection() as conn:
-            cursor = await conn.execute(
-                """
-                SELECT id, guild_id, case_number, action, user_id,
-                       moderator_id, reason, message_id, created_at
-                FROM mod_cases
-                WHERE guild_id = ? AND case_number = ?
-                """,
-                (guild_id, case_number),
-            )
-            row = await cursor.fetchone()
-            if not row:
-                return None
-            return ModCase(
-                id=row["id"],
-                guild_id=row["guild_id"],
-                case_number=row["case_number"],
-                action=row["action"],
-                user_id=row["user_id"],
-                moderator_id=row["moderator_id"],
-                reason=row["reason"],
-                message_id=row["message_id"],
-                created_at=datetime.fromisoformat(row["created_at"]),
-            )
-
-    async def update_reason(self, guild_id: int, case_number: int, reason: str) -> bool:
-        """Update the reason for an existing moderation case."""
-        async with await self.db.get_connection() as conn:
-            cursor = await conn.execute(
-                """
-                UPDATE mod_cases
-                SET reason = ?
-                WHERE guild_id = ? AND case_number = ?
-                """,
-                (reason, guild_id, case_number),
-            )
-            await conn.commit()
-            return cursor.rowcount > 0
-
-    async def update_message_id(self, guild_id: int, case_number: int, message_id: int) -> None:
-        """Record the Discord audit log message ID associated with a case embed."""
-        async with await self.db.get_connection() as conn:
-            await conn.execute(
-                """
-                UPDATE mod_cases
-                SET message_id = ?
-                WHERE guild_id = ? AND case_number = ?
-                """,
-                (message_id, guild_id, case_number),
-            )
-            await conn.commit()

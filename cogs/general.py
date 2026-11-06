@@ -9,6 +9,8 @@ import humanize
 from discord.ext import commands
 from discord.ext.commands import Context
 
+from helpers.embeds import EmbedFactory
+
 BOT_VERSION = "2.0.0"
 
 
@@ -39,27 +41,23 @@ class General(commands.Cog, name="general"):
         else:
             prefix = getattr(self.bot.config, "bot_prefix", "Tg9 ")
 
-        embed = discord.Embed(
+        embed = EmbedFactory.create(
             title="TG9 Bot — Status & Information",
             description="A modern, general-purpose Discord bot.",
-            color=0x42F56C,
+            author_name=self.bot.user.name if self.bot.user else "TG9",
+            author_icon=self.bot.user.display_avatar.url if self.bot.user else None,
+            fields=[
+                ("Bot Version", f"`{BOT_VERSION}`", True),
+                ("discord.py", f"`v{discord.__version__}`", True),
+                ("Python", f"`v{platform.python_version()}`", True),
+                ("Prefix", f"`{prefix}`", True),
+                ("Servers", f"`{guilds_count}`", True),
+                ("Users Cached", f"`{total_members}`", True),
+                ("Uptime", uptime, True),
+                ("Gateway Latency", f"`{round(self.bot.latency * 1000)}ms`", True),
+            ],
+            footer=f"Requested by {ctx.author}",
         )
-        embed.set_author(
-            name=self.bot.user.name if self.bot.user else "TG9",
-            icon_url=self.bot.user.display_avatar.url if self.bot.user else None,
-        )
-        embed.add_field(name="Bot Version", value=f"`{BOT_VERSION}`", inline=True)
-        embed.add_field(name="discord.py", value=f"`v{discord.__version__}`", inline=True)
-        embed.add_field(name="Python", value=f"`v{platform.python_version()}`", inline=True)
-        embed.add_field(name="Prefix", value=f"`{prefix}`", inline=True)
-        embed.add_field(name="Servers", value=f"`{guilds_count}`", inline=True)
-        embed.add_field(name="Users Cached", value=f"`{total_members}`", inline=True)
-        embed.add_field(name="Uptime", value=uptime, inline=True)
-        embed.add_field(
-            name="Gateway Latency", value=f"`{round(self.bot.latency * 1000)}ms`", inline=True
-        )
-
-        embed.set_footer(text=f"Requested by {ctx.author}")
         await ctx.send(embed=embed)
 
     @commands.hybrid_command(
@@ -70,22 +68,22 @@ class General(commands.Cog, name="general"):
         gateway_ms = round(self.bot.latency * 1000)
 
         start_time = time.perf_counter()
-        initial_embed = discord.Embed(
+        initial_embed = EmbedFactory.success(
             title="🏓 Pong!",
             description="Measuring API roundtrip...",
-            color=0x42F56C,
         )
         message = await ctx.send(embed=initial_embed)
         end_time = time.perf_counter()
 
         roundtrip_ms = round((end_time - start_time) * 1000)
 
-        result_embed = discord.Embed(
+        result_embed = EmbedFactory.success(
             title="🏓 Pong!",
-            color=0x42F56C,
+            fields=[
+                ("Gateway Latency", f"`{gateway_ms}ms`", True),
+                ("API Roundtrip", f"`{roundtrip_ms}ms`", True),
+            ],
         )
-        result_embed.add_field(name="Gateway Latency", value=f"`{gateway_ms}ms`", inline=True)
-        result_embed.add_field(name="API Roundtrip", value=f"`{roundtrip_ms}ms`", inline=True)
         await message.edit(embed=result_embed)
 
     @commands.hybrid_command(
@@ -101,10 +99,9 @@ class General(commands.Cog, name="general"):
         )
 
         if new_prefix is None:
-            embed = discord.Embed(
+            embed = EmbedFactory.success(
                 title="Server Prefix",
                 description=f"Current prefix for **{ctx.guild.name}** is `{settings.prefix}`",
-                color=0x42F56C,
             )
             await ctx.send(embed=embed)
             return
@@ -114,32 +111,29 @@ class General(commands.Cog, name="general"):
         has_manage_guild = ctx.author.guild_permissions.manage_guild
         has_admin_role = await self.bot.guild_repo.has_role_type(ctx.author, "admin")
         if not (is_owner or is_guild_owner or has_manage_guild or has_admin_role):
-            embed = discord.Embed(
+            embed = EmbedFactory.error(
                 title="Permission Denied",
                 description=(
                     "You need `Manage Server` permission or an Administrator role "
                     "to change the bot prefix."
                 ),
-                color=0xE02B2B,
             )
             await ctx.send(embed=embed)
             return
 
         clean_prefix = new_prefix.strip()
         if not clean_prefix or len(clean_prefix) > 10:
-            embed = discord.Embed(
+            embed = EmbedFactory.error(
                 title="Invalid Prefix",
                 description="Prefix length must be between 1 and 10 characters.",
-                color=0xE02B2B,
             )
             await ctx.send(embed=embed)
             return
 
         await self.bot.guild_repo.update_prefix(ctx.guild.id, clean_prefix)
-        embed = discord.Embed(
+        embed = EmbedFactory.success(
             title="Prefix Updated",
             description=f"The command prefix for **{ctx.guild.name}** is now `{clean_prefix}`.",
-            color=0x42F56C,
         )
         await ctx.send(embed=embed)
 
@@ -155,7 +149,7 @@ class General(commands.Cog, name="general"):
             await ctx.send("Support server invite link is currently not configured.")
             return
 
-        embed = discord.Embed(
+        embed = EmbedFactory.create(
             description=f"Join the support server by clicking [here]({server_link}).",
             color=0xD75BF4,
         )
@@ -169,12 +163,11 @@ class General(commands.Cog, name="general"):
     @commands.guild_only()
     async def poll(self, ctx: Context, *, title: str):
         """Create a poll where members can vote."""
-        embed = discord.Embed(
+        embed = EmbedFactory.success(
             title="A new poll has been created!",
             description=f"{title}",
-            color=0x42F56C,
+            footer=f"Poll created by: {ctx.author} • React to vote!",
         )
-        embed.set_footer(text=f"Poll created by: {ctx.author} • React to vote!")
         embed_message = await ctx.send(embed=embed)
         await embed_message.add_reaction("👍")
         await embed_message.add_reaction("👎")

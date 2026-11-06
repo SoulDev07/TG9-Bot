@@ -7,12 +7,12 @@ from discord.ext.commands import Context, check
 
 from helpers.config import get_config
 from helpers.exceptions import (
-    HierarchyError,
     MissingRoleOrPermission,
     ModuleDisabled,
     UserNotGuildOwner,
     UserNotOwner,
 )
+from helpers.hierarchy import HierarchyValidator
 
 
 class PrivilegeLevel(enum.IntEnum):
@@ -132,32 +132,7 @@ def mod_or_permissions(**perms: bool):
 
 def check_hierarchy(ctx: Context, target: discord.Member) -> None:
     """Verify that both the invoking moderator and the bot outrank the target member."""
-    if not ctx.guild:
-        return
-
-    if target.id == ctx.guild.owner_id:
-        raise HierarchyError("You cannot perform moderation actions against the server owner.")
-    if target.id == ctx.bot.user.id:
-        raise HierarchyError("I cannot perform moderation actions against myself.")
-    if target.id == ctx.author.id:
-        raise HierarchyError("You cannot perform moderation actions against yourself.")
-
-    bot_config = getattr(ctx.bot, "config", None) or get_config()
-    is_owner_invoker = bot_config.is_owner(ctx.author.id)
-    is_guild_owner = ctx.author.id == ctx.guild.owner_id
-
-    if not (is_owner_invoker or is_guild_owner) and ctx.author.top_role <= target.top_role:
-        raise HierarchyError(
-            f"Your highest role ({ctx.author.top_role.mention}) must be strictly higher than "
-            f"{target.mention}'s highest role ({target.top_role.mention})."
-        )
-
-    bot_member = ctx.guild.me
-    if bot_member.top_role <= target.top_role:
-        raise HierarchyError(
-            f"My highest role ({bot_member.top_role.mention}) must be strictly higher than "
-            f"{target.mention}'s highest role ({target.top_role.mention}) to take action."
-        )
+    HierarchyValidator.validate(ctx, target)
 
 
 def module_enabled(module_name: str):

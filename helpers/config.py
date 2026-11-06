@@ -1,28 +1,11 @@
 """Typed application configuration models using Pydantic Settings."""
 
-import json
-from pathlib import Path
-from typing import Any
-
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-CONFIG_FILE_PATH = Path("config.json")
-
-
-def _read_config_json() -> dict[str, Any]:
-    """Read static fallback defaults from config.json if present."""
-    if CONFIG_FILE_PATH.is_file():
-        try:
-            with open(CONFIG_FILE_PATH, encoding="utf-8") as file:
-                return json.load(file)
-        except Exception:
-            return {}
-    return {}
-
 
 class BotConfig(BaseSettings):
-    """Validated bot configuration merging .env, environment variables, and config.json."""
+    """Validated bot configuration loaded from environment variables and .env."""
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -50,17 +33,6 @@ class BotConfig(BaseSettings):
         """Check if a given user ID is an authorized bot owner."""
         return user_id in self.owners
 
-    def __getitem__(self, item: str) -> Any:
-        """Allow subscript access for backwards compatibility."""
-        try:
-            return getattr(self, item)
-        except AttributeError as err:
-            raise KeyError(item) from err
-
-    def get(self, item: str, default: Any = None) -> Any:
-        """Allow dict-like get method for backwards compatibility."""
-        return getattr(self, item, default)
-
 
 _config_instance: BotConfig | None = None
 
@@ -68,13 +40,7 @@ _config_instance: BotConfig | None = None
 def load_config() -> BotConfig:
     """Load, validate, and cache the bot configuration."""
     global _config_instance
-    json_defaults = _read_config_json()
-
-    raw_owners = json_defaults.get("owners", [])
-    if isinstance(raw_owners, list):
-        json_defaults["owners"] = set(raw_owners)
-
-    _config_instance = BotConfig(**json_defaults)
+    _config_instance = BotConfig()
     return _config_instance
 
 

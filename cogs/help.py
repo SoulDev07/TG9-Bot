@@ -1,7 +1,8 @@
 """Help command for TG9 Bot."""
 
-import discord
 from discord.ext import commands
+
+from helpers.embeds import EmbedFactory
 
 
 class Help(commands.Cog, name="help"):
@@ -15,10 +16,9 @@ class Help(commands.Cog, name="help"):
         """List all commands from every loaded cog."""
         prefix = getattr(self.bot.config, "bot_prefix", "Tg9 ")
 
-        embed = discord.Embed(
+        embed = EmbedFactory.success(
             title="Help",
             description="List of available commands:",
-            color=0x42F56C,
         )
 
         for cog_name in self.bot.cogs:

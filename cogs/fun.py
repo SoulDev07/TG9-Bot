@@ -1,5 +1,6 @@
 """Stores fun commands of Bot"""
 
+import contextlib
 import random
 
 import discord
@@ -7,12 +8,13 @@ from discord.ext import commands
 from discord.ext.commands import Context
 
 from helpers import exceptions
+from helpers.embeds import EmbedColor, EmbedFactory
 
 EMBED_COLORS = {
-    "default": 0xF59E42,
-    "win": 0x42F56C,
-    "draw": 0xF59E42,
-    "lose": 0xE02B2B,
+    "default": EmbedColor.WARNING,
+    "win": EmbedColor.SUCCESS,
+    "draw": EmbedColor.WARNING,
+    "lose": EmbedColor.ERROR,
 }
 
 
@@ -38,11 +40,15 @@ class Fun(commands.Cog, name="fun"):
         ctx: Context,
         title: str,
         desc: str = "",
-        color: int = EMBED_COLORS["default"],
-    ):
-        embed = discord.Embed(title=title, description=desc, color=color)
-        embed.set_author(name=ctx.author.display_name, icon_url=ctx.author.display_avatar.url)
-        return embed
+        color: int = EmbedColor.WARNING,
+    ) -> discord.Embed:
+        return EmbedFactory.create(
+            title=title,
+            description=desc,
+            color=color,
+            author_name=ctx.author.display_name,
+            author_icon=ctx.author.display_avatar.url,
+        )
 
     @commands.hybrid_command(name="coinflip", description="Flip a coin")
     async def coinflip(self, ctx: Context):
@@ -101,17 +107,15 @@ class Fun(commands.Cog, name="fun"):
 
             await choose_msg.edit(embed=result_embed)
 
-        except (TimeoutError, Exception) as exc:
-            if isinstance(exc, TimeoutError):
+        except TimeoutError:
+            with contextlib.suppress(discord.HTTPException):
                 await choose_msg.clear_reactions()
-                timeout_embed = self.get_embed(
-                    ctx,
-                    title="Too late",
-                    color=EMBED_COLORS["lose"],
-                )
-                await choose_msg.edit(embed=timeout_embed)
-            else:
-                raise exc
+            timeout_embed = self.get_embed(
+                ctx,
+                title="Too late",
+                color=EMBED_COLORS["lose"],
+            )
+            await choose_msg.edit(embed=timeout_embed)
 
 
 async def setup(bot: commands.Bot):
