@@ -1,5 +1,7 @@
 """Stores general commands of Bot"""
 
+from __future__ import annotations
+
 import platform
 import time
 from datetime import UTC, datetime
@@ -9,7 +11,7 @@ import humanize
 from discord.ext import commands
 from discord.ext.commands import Context
 
-from helpers.embeds import EmbedFactory
+from helpers.embeds import error_embed, make_embed, success_embed
 
 BOT_VERSION = "2.0.0"
 
@@ -41,7 +43,7 @@ class General(commands.Cog, name="general"):
         else:
             prefix = getattr(self.bot.config, "bot_prefix", "Tg9 ")
 
-        embed = EmbedFactory.create(
+        embed = make_embed(
             title="TG9 Bot — Status & Information",
             description="A modern, general-purpose Discord bot.",
             author_name=self.bot.user.name if self.bot.user else "TG9",
@@ -68,7 +70,7 @@ class General(commands.Cog, name="general"):
         gateway_ms = round(self.bot.latency * 1000)
 
         start_time = time.perf_counter()
-        initial_embed = EmbedFactory.success(
+        initial_embed = success_embed(
             title="🏓 Pong!",
             description="Measuring API roundtrip...",
         )
@@ -77,7 +79,7 @@ class General(commands.Cog, name="general"):
 
         roundtrip_ms = round((end_time - start_time) * 1000)
 
-        result_embed = EmbedFactory.success(
+        result_embed = success_embed(
             title="🏓 Pong!",
             fields=[
                 ("Gateway Latency", f"`{gateway_ms}ms`", True),
@@ -99,7 +101,7 @@ class General(commands.Cog, name="general"):
         )
 
         if new_prefix is None:
-            embed = EmbedFactory.success(
+            embed = success_embed(
                 title="Server Prefix",
                 description=f"Current prefix for **{ctx.guild.name}** is `{settings.prefix}`",
             )
@@ -111,7 +113,7 @@ class General(commands.Cog, name="general"):
         has_manage_guild = ctx.author.guild_permissions.manage_guild
         has_admin_role = await self.bot.guild_repo.has_role_type(ctx.author, "admin")
         if not (is_owner or is_guild_owner or has_manage_guild or has_admin_role):
-            embed = EmbedFactory.error(
+            embed = error_embed(
                 title="Permission Denied",
                 description=(
                     "You need `Manage Server` permission or an Administrator role "
@@ -123,7 +125,7 @@ class General(commands.Cog, name="general"):
 
         clean_prefix = new_prefix.strip()
         if not clean_prefix or len(clean_prefix) > 10:
-            embed = EmbedFactory.error(
+            embed = error_embed(
                 title="Invalid Prefix",
                 description="Prefix length must be between 1 and 10 characters.",
             )
@@ -131,7 +133,7 @@ class General(commands.Cog, name="general"):
             return
 
         await self.bot.guild_repo.update_prefix(ctx.guild.id, clean_prefix)
-        embed = EmbedFactory.success(
+        embed = success_embed(
             title="Prefix Updated",
             description=f"The command prefix for **{ctx.guild.name}** is now `{clean_prefix}`.",
         )
@@ -149,7 +151,7 @@ class General(commands.Cog, name="general"):
             await ctx.send("Support server invite link is currently not configured.")
             return
 
-        embed = EmbedFactory.create(
+        embed = make_embed(
             description=f"Join the support server by clicking [here]({server_link}).",
             color=0xD75BF4,
         )
@@ -163,7 +165,7 @@ class General(commands.Cog, name="general"):
     @commands.guild_only()
     async def poll(self, ctx: Context, *, title: str):
         """Create a poll where members can vote."""
-        embed = EmbedFactory.success(
+        embed = success_embed(
             title="A new poll has been created!",
             description=f"{title}",
             footer=f"Poll created by: {ctx.author} • React to vote!",

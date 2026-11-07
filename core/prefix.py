@@ -1,4 +1,6 @@
-"""Dynamic command prefix resolution strategies."""
+"""Dynamic command prefix resolution functions."""
+
+from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
@@ -9,15 +11,17 @@ if TYPE_CHECKING:
     from bot import DiscordBot
 
 
+async def dynamic_prefix_resolver(bot: DiscordBot, message: discord.Message) -> list[str]:
+    """Dynamically resolve command prefixes per guild with fallback to default."""
+    default_prefix = bot.config.bot_prefix
+    if not message.guild:
+        return commands.when_mentioned_or(default_prefix)(bot, message)
+
+    prefix = await bot.guild_repo.get_prefix(message.guild.id, default=default_prefix)
+    return commands.when_mentioned_or(prefix)(bot, message)
+
+
 class DynamicPrefixResolver:
-    """Strategy for resolving command prefixes based on guild settings and fallbacks."""
+    """Namespace alias for backward compatibility."""
 
-    @staticmethod
-    async def resolve(bot: "DiscordBot", message: discord.Message) -> list[str]:
-        """Dynamically resolve command prefixes per guild with fallback to default."""
-        default_prefix = bot.config.bot_prefix
-        if not message.guild:
-            return commands.when_mentioned_or(default_prefix)(bot, message)
-
-        prefix = await bot.guild_repo.get_prefix(message.guild.id, default=default_prefix)
-        return commands.when_mentioned_or(prefix)(bot, message)
+    resolve = staticmethod(dynamic_prefix_resolver)

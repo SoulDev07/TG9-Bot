@@ -1,10 +1,13 @@
 """Owner administrative commands."""
 
+from __future__ import annotations
+
 import discord
 from discord.ext import commands
 from discord.ext.commands import Context
 
 from helpers import checks
+from helpers.embeds import error_embed, info_embed, make_embed, success_embed, warning_embed
 from helpers.logger import get_logger
 
 logger = get_logger()
@@ -25,12 +28,11 @@ class Owner(commands.Cog, name="owner"):
                 case "global":
                     synced = await self.bot.tree.sync()
                     logger.info("global_commands_synced", count=len(synced), author=str(ctx.author))
-                    embed = discord.Embed(
+                    embed = success_embed(
                         title="Global Sync Complete",
                         description=(
                             f"Successfully synced `{len(synced)}` application commands globally."
                         ),
-                        color=0x42F56C,
                     )
                     await ctx.send(embed=embed)
 
@@ -38,10 +40,9 @@ class Owner(commands.Cog, name="owner"):
                     self.bot.tree.clear_commands(guild=None)
                     await self.bot.tree.sync()
                     logger.info("global_commands_cleared", author=str(ctx.author))
-                    embed = discord.Embed(
+                    embed = success_embed(
                         title="Global Commands Cleared",
                         description="Cleared all global application commands.",
-                        color=0x42F56C,
                     )
                     await ctx.send(embed=embed)
 
@@ -56,10 +57,9 @@ class Owner(commands.Cog, name="owner"):
                         guild_id=ctx.guild.id,
                         author=str(ctx.author),
                     )
-                    embed = discord.Embed(
+                    embed = success_embed(
                         title="Guild Commands Cleared",
                         description=f"Cleared all application commands in **{ctx.guild.name}**.",
-                        color=0x42F56C,
                     )
                     await ctx.send(embed=embed)
 
@@ -73,12 +73,11 @@ class Owner(commands.Cog, name="owner"):
                         target_guild_id=scope,
                         author=str(ctx.author),
                     )
-                    embed = discord.Embed(
+                    embed = success_embed(
                         title="Target Guild Sync Complete",
                         description=(
                             f"Successfully synced `{len(synced)}` commands to Guild `{scope}`."
                         ),
-                        color=0x42F56C,
                     )
                     await ctx.send(embed=embed)
 
@@ -96,21 +95,19 @@ class Owner(commands.Cog, name="owner"):
                         guild_id=ctx.guild.id,
                         author=str(ctx.author),
                     )
-                    embed = discord.Embed(
+                    embed = success_embed(
                         title="Guild Sync Complete",
                         description=(
                             f"Successfully synced `{len(synced)}` commands to **{ctx.guild.name}**."
                         ),
-                        color=0x42F56C,
                     )
                     await ctx.send(embed=embed)
 
         except discord.HTTPException as e:
             logger.error("sync_http_error", error=str(e), author=str(ctx.author))
-            embed = discord.Embed(
+            embed = error_embed(
                 title="Sync Failed",
                 description=f"Discord API returned an error: `{e}`",
-                color=0xE02B2B,
             )
             await ctx.send(embed=embed)
 
@@ -122,18 +119,16 @@ class Owner(commands.Cog, name="owner"):
         try:
             await self.bot.load_extension(ext)
             logger.info("extension_loaded", extension=ext, author=str(ctx.author))
-            embed = discord.Embed(
+            embed = success_embed(
                 title="Extension Loaded",
                 description=f"Successfully loaded extension `{ext}`.",
-                color=0x42F56C,
             )
             await ctx.send(embed=embed)
         except Exception as e:
             logger.error("extension_load_failed", extension=ext, error=str(e))
-            embed = discord.Embed(
+            embed = error_embed(
                 title="Load Failed",
                 description=f"Failed to load `{ext}`:\n```{type(e).__name__}: {e}```",
-                color=0xE02B2B,
             )
             await ctx.send(embed=embed)
 
@@ -143,10 +138,9 @@ class Owner(commands.Cog, name="owner"):
         """Unload an extension module."""
         ext = extension if extension.startswith("cogs.") else f"cogs.{extension}"
         if ext == "cogs.owner":
-            embed = discord.Embed(
+            embed = error_embed(
                 title="Action Denied",
                 description="Cannot unload the `owner` extension as it handles management.",
-                color=0xE02B2B,
             )
             await ctx.send(embed=embed)
             return
@@ -154,18 +148,16 @@ class Owner(commands.Cog, name="owner"):
         try:
             await self.bot.unload_extension(ext)
             logger.info("extension_unloaded", extension=ext, author=str(ctx.author))
-            embed = discord.Embed(
+            embed = success_embed(
                 title="Extension Unloaded",
                 description=f"Successfully unloaded extension `{ext}`.",
-                color=0x42F56C,
             )
             await ctx.send(embed=embed)
         except Exception as e:
             logger.error("extension_unload_failed", extension=ext, error=str(e))
-            embed = discord.Embed(
+            embed = error_embed(
                 title="Unload Failed",
                 description=f"Failed to unload `{ext}`:\n```{type(e).__name__}: {e}```",
-                color=0xE02B2B,
             )
             await ctx.send(embed=embed)
 
@@ -196,11 +188,10 @@ class Owner(commands.Cog, name="owner"):
             if failed:
                 description += "\nFailed extensions:\n" + "\n".join(failed)
 
-            embed = discord.Embed(
-                title="Reload Complete",
-                description=description,
-                color=0x42F56C if not failed else 0xF59E42,
-            )
+            if failed:
+                embed = warning_embed(title="Reload Complete", description=description)
+            else:
+                embed = success_embed(title="Reload Complete", description=description)
             await ctx.send(embed=embed)
             return
 
@@ -208,18 +199,16 @@ class Owner(commands.Cog, name="owner"):
         try:
             await self.bot.reload_extension(ext)
             logger.info("extension_reloaded", extension=ext, author=str(ctx.author))
-            embed = discord.Embed(
+            embed = success_embed(
                 title="Extension Reloaded",
                 description=f"Successfully reloaded extension `{ext}`.",
-                color=0x42F56C,
             )
             await ctx.send(embed=embed)
         except Exception as e:
             logger.error("extension_reload_failed", extension=ext, error=str(e))
-            embed = discord.Embed(
+            embed = error_embed(
                 title="Reload Failed",
                 description=f"Failed to reload `{ext}`:\n```{type(e).__name__}: {e}```",
-                color=0xE02B2B,
             )
             await ctx.send(embed=embed)
 
@@ -234,19 +223,20 @@ class Owner(commands.Cog, name="owner"):
 
         extensions_list = [f"`{ext}`" for ext in self.bot.extensions]
 
-        embed = discord.Embed(
+        embed = make_embed(
             title="Loaded Cogs & Extensions",
-            color=0x42F56C,
-        )
-        embed.add_field(
-            name=f"Active Cogs ({len(cogs_list)})",
-            value="\n".join(cogs_list) if cogs_list else "None",
-            inline=False,
-        )
-        embed.add_field(
-            name=f"Active Extensions ({len(extensions_list)})",
-            value=", ".join(extensions_list) if extensions_list else "None",
-            inline=False,
+            fields=[
+                (
+                    f"Active Cogs ({len(cogs_list)})",
+                    "\n".join(cogs_list) if cogs_list else "None",
+                    False,
+                ),
+                (
+                    f"Active Extensions ({len(extensions_list)})",
+                    ", ".join(extensions_list) if extensions_list else "None",
+                    False,
+                ),
+            ],
         )
         await ctx.send(embed=embed)
 
@@ -255,7 +245,7 @@ class Owner(commands.Cog, name="owner"):
     async def shutdown(self, ctx: Context):
         """Terminate the bot process safely."""
         logger.info("shutdown_invoked", author=str(ctx.author))
-        embed = discord.Embed(description="Shutting down...", color=0x42F56C)
+        embed = success_embed(description="Shutting down...")
         await ctx.send(embed=embed)
         await self.bot.close()
 
@@ -266,10 +256,9 @@ class Owner(commands.Cog, name="owner"):
         if ctx.invoked_subcommand is None:
             entries = await self.bot.blacklist_repo.get_all()
             ids = [str(entry.user_id) for entry in entries]
-            embed = discord.Embed(
-                title=f"There are currently {len(ids)} blacklisted",
+            embed = info_embed(
+                title=f"There are currently {len(ids)} blacklisted users",
                 description=f"{', '.join(ids)}" if ids else "No users are currently blacklisted.",
-                color=0x0000FF,
             )
             await ctx.send(embed=embed)
 
@@ -284,10 +273,9 @@ class Owner(commands.Cog, name="owner"):
     ):
         """Add a user to the global blacklist."""
         if user is None:
-            embed = discord.Embed(
+            embed = error_embed(
                 title="Error!",
                 description="Please specify a valid user to add to the blacklist.",
-                color=0xE02B2B,
             )
             await ctx.send(embed=embed)
             return
@@ -295,10 +283,9 @@ class Owner(commands.Cog, name="owner"):
         user_id = user.id
         try:
             if await self.bot.blacklist_repo.is_blacklisted(user_id):
-                embed = discord.Embed(
+                embed = error_embed(
                     title="Error!",
                     description=f"**{user.name}** is already in the blacklist.",
-                    color=0xE02B2B,
                 )
                 await ctx.send(embed=embed)
                 return
@@ -306,24 +293,22 @@ class Owner(commands.Cog, name="owner"):
             await self.bot.blacklist_repo.add(user_id, reason=reason, created_by=ctx.author.id)
             total_count = await self.bot.blacklist_repo.count()
             logger.info("user_blacklisted", target_id=user_id, target_name=user.name)
-            embed = discord.Embed(
+            embed = success_embed(
                 title="User Blacklisted",
                 description=f"**{user.name}** has been successfully added to the blacklist.",
-                color=0x42F56C,
+                fields=[("Reason", reason, False)],
+                footer=f"There are now {total_count} users in the blacklist",
             )
-            embed.add_field(name="Reason", value=reason, inline=False)
-            embed.set_footer(text=f"There are now {total_count} users in the blacklist")
             await ctx.send(embed=embed)
 
         except Exception as e:
             logger.error("blacklist_add_failed", target_id=user_id, error=str(e))
-            embed = discord.Embed(
+            embed = error_embed(
                 title="Error!",
                 description=(
                     "An unknown error occurred when trying to add "
                     f"**{user.name}** to the blacklist."
                 ),
-                color=0xE02B2B,
             )
             await ctx.send(embed=embed)
 
@@ -332,10 +317,9 @@ class Owner(commands.Cog, name="owner"):
     async def blacklist_remove(self, ctx: Context, user: discord.User | None = None):
         """Remove a user from the global blacklist."""
         if user is None:
-            embed = discord.Embed(
+            embed = error_embed(
                 title="Error!",
                 description="Please specify a valid user to remove from the blacklist.",
-                color=0xE02B2B,
             )
             await ctx.send(embed=embed)
             return
@@ -344,30 +328,27 @@ class Owner(commands.Cog, name="owner"):
         try:
             removed = await self.bot.blacklist_repo.remove(user_id)
             if not removed:
-                embed = discord.Embed(
+                embed = error_embed(
                     title="Error!",
                     description=f"**{user.name}** is not in the blacklist.",
-                    color=0xE02B2B,
                 )
                 await ctx.send(embed=embed)
                 return
 
             total_count = await self.bot.blacklist_repo.count()
             logger.info("user_unblacklisted", target_id=user_id, target_name=user.name)
-            embed = discord.Embed(
+            embed = success_embed(
                 title="User removed from blacklist",
                 description=f"**{user.name}** has been successfully removed from the blacklist",
-                color=0x42F56C,
+                footer=f"There are now {total_count} users in the blacklist",
             )
-            embed.set_footer(text=f"There are now {total_count} users in the blacklist")
             await ctx.send(embed=embed)
 
         except Exception as e:
             logger.error("blacklist_remove_failed", target_id=user_id, error=str(e))
-            embed = discord.Embed(
+            embed = error_embed(
                 title="Error!",
                 description=f"**{user.name}** is not in the blacklist.",
-                color=0xE02B2B,
             )
             await ctx.send(embed=embed)
 
@@ -377,10 +358,9 @@ class Owner(commands.Cog, name="owner"):
         """Manage rotating presence statuses."""
         if ctx.invoked_subcommand is None:
             statuses = self.bot.config.statuses
-            embed = discord.Embed(
+            embed = info_embed(
                 title=f"There are currently {len(statuses)} statuses",
                 description=f"{', '.join(str(item) for item in statuses)}",
-                color=0x0000FF,
             )
             await ctx.send(embed=embed)
 
@@ -389,22 +369,20 @@ class Owner(commands.Cog, name="owner"):
     async def status_add(self, ctx: Context, sentence: str):
         """Add a status to rotating presence list."""
         if sentence in self.bot.config.statuses:
-            embed = discord.Embed(
+            embed = error_embed(
                 title="Error!",
                 description=f"**{sentence}** is already in the statuses.",
-                color=0xE02B2B,
             )
             await ctx.send(embed=embed)
             return
 
         self.bot.config.statuses.append(sentence)
         logger.info("status_added", status=sentence)
-        embed = discord.Embed(
+        embed = success_embed(
             title="Status Added",
             description=f"**{sentence}** has been successfully added to rotating statuses.",
-            color=0x42F56C,
+            footer=f"There are now {len(self.bot.config.statuses)} statuses.",
         )
-        embed.set_footer(text=f"There are now {len(self.bot.config.statuses)} statuses.")
         await ctx.send(embed=embed)
 
     @status.command(name="remove")
@@ -412,22 +390,20 @@ class Owner(commands.Cog, name="owner"):
     async def status_remove(self, ctx: Context, sentence: str):
         """Remove a status from rotating presence list."""
         if sentence not in self.bot.config.statuses:
-            embed = discord.Embed(
+            embed = error_embed(
                 title="Error!",
                 description=f"**{sentence}** is not in the statuses.",
-                color=0xE02B2B,
             )
             await ctx.send(embed=embed)
             return
 
         self.bot.config.statuses.remove(sentence)
         logger.info("status_removed", status=sentence)
-        embed = discord.Embed(
+        embed = success_embed(
             title="Status Removed",
             description=f"**{sentence}** has been successfully removed from rotating statuses.",
-            color=0x42F56C,
+            footer=f"There are now {len(self.bot.config.statuses)} statuses.",
         )
-        embed.set_footer(text=f"There are now {len(self.bot.config.statuses)} statuses.")
         await ctx.send(embed=embed)
 
     @status.command(name="set")
@@ -440,19 +416,17 @@ class Owner(commands.Cog, name="owner"):
                 activity=discord.Game(sentence),
             )
             logger.info("presence_updated", status=sentence)
-            embed = discord.Embed(
+            embed = success_embed(
                 title="Status set",
                 description=f"**{sentence}** has been successfully set to bot.",
-                color=0x42F56C,
             )
             await ctx.send(embed=embed)
 
         except Exception as e:
             logger.error("presence_update_failed", status=sentence, error=str(e))
-            embed = discord.Embed(
+            embed = error_embed(
                 title="Error!",
                 description=f"**{sentence}** was unable to be set.",
-                color=0xE02B2B,
             )
             await ctx.send(embed=embed)
 

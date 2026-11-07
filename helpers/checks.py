@@ -1,8 +1,10 @@
 """Command checks and permission predicates."""
 
-import enum
+from __future__ import annotations
 
-import discord
+import enum
+from typing import TYPE_CHECKING
+
 from discord.ext.commands import Context, check
 
 from helpers.config import get_config
@@ -12,7 +14,10 @@ from helpers.exceptions import (
     UserNotGuildOwner,
     UserNotOwner,
 )
-from helpers.hierarchy import HierarchyValidator
+from helpers.hierarchy import validate_hierarchy
+
+if TYPE_CHECKING:
+    import discord
 
 
 class PrivilegeLevel(enum.IntEnum):
@@ -25,7 +30,7 @@ class PrivilegeLevel(enum.IntEnum):
     BOT_OWNER = 4
 
     @classmethod
-    async def from_ctx(cls, ctx: Context) -> "PrivilegeLevel":
+    async def from_ctx(cls, ctx: Context) -> PrivilegeLevel:
         """Resolve the effective PrivilegeLevel of the command invoker."""
         bot_config = getattr(ctx.bot, "config", None) or get_config()
         if bot_config.is_owner(ctx.author.id):
@@ -132,7 +137,7 @@ def mod_or_permissions(**perms: bool):
 
 def check_hierarchy(ctx: Context, target: discord.Member) -> None:
     """Verify that both the invoking moderator and the bot outrank the target member."""
-    HierarchyValidator.validate(ctx, target)
+    validate_hierarchy(ctx, target)
 
 
 def module_enabled(module_name: str):

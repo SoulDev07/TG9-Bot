@@ -8,13 +8,13 @@ import platform
 import random
 import sys
 from datetime import UTC, datetime
-from typing import override
+from typing import TYPE_CHECKING, override
 
 import discord
 from discord.ext import commands, tasks
 from discord.ext.commands import Context
 
-from core.prefix import DynamicPrefixResolver
+from core.prefix import dynamic_prefix_resolver
 from core.tree import BotCommandTree
 from helpers import exceptions
 from helpers.config import BotConfig, load_config
@@ -24,8 +24,11 @@ from helpers.db import (
     GuildRepository,
     ModCaseRepository,
 )
-from helpers.embeds import EmbedFactory
+from helpers.embeds import error_embed, warning_embed
 from helpers.logger import get_logger, setup_logging
+
+if TYPE_CHECKING:
+    from discord import app_commands
 
 logger = get_logger()
 
@@ -38,7 +41,7 @@ class DiscordBot(commands.Bot):
 
     def __init__(self, bot_config: BotConfig) -> None:
         super().__init__(
-            command_prefix=DynamicPrefixResolver.resolve,
+            command_prefix=dynamic_prefix_resolver,
             intents=intents,
             help_command=None,
             tree_cls=BotCommandTree,
@@ -145,105 +148,123 @@ class DiscordBot(commands.Bot):
         await self.process_commands(message)
 
     async def on_command_completion(self, ctx: Context) -> None:
+        """Audit log successful prefix and hybrid command executions."""
         if not ctx.command:
             return
-        executed_command = ctx.command.qualified_name.split(" ")[0]
+        executed_command = ctx.command.qualified_name
 
-        if ctx.guild is not None:
-            logger.info(
-                "command_executed",
-                command=executed_command,
-                guild=ctx.guild.name,
-                guild_id=ctx.guild.id,
-                author=str(ctx.author),
-                author_id=ctx.author.id,
-            )
-        else:
-            logger.info(
-                "command_executed",
-                command=executed_command,
-                guild="DM",
-                author=str(ctx.author),
-                author_id=ctx.author.id,
-            )
+        logger.info(
+            "command_executed",
+            command=executed_command,
+            guild=ctx.guild.name if ctx.guild else "DM",
+            guild_id=ctx.guild.id if ctx.guild else None,
+            channel_id=ctx.channel.id,
+            author=str(ctx.author),
+            author_id=ctx.author.id,
+        )
+
+    async def on_app_command_completion(
+        self,
+        interaction: discord.Interaction,
+        command: app_commands.Command | app_commands.ContextMenu,
+    ) -> None:
+        """Audit log successful slash command executions."""
+        logger.info(
+            "app_command_executed",
+            command=command.qualified_name,
+            guild=interaction.guild.name if interaction.guild else "DM",
+            guild_id=interaction.guild_id,
+            channel_id=interaction.channel_id,
+            user=str(interaction.user),
+            user_id=interaction.user.id,
+        )
 
     async def on_command_error(self, ctx: Context, error: Exception) -> None:
-        if isinstance(error, commands.MissingRequiredArgument):
-            embed = EmbedFactory.error(description=str(error).capitalize())
-            await ctx.send(embed=embed)
+        """Centralized error handling and messaging for prefix/hybrid commands."""
+        actual_error = getattr(error, "original", error)
 
-        elif isinstance(error, commands.MissingPermissions):
-            missing_perms = ", ".join(error.missing_permissions)
-            embed = EmbedFactory.error(
-                description=f"You are missing permission `{missing_perms}` to execute this command!"
-            )
-            await ctx.send(embed=embed)
+        match actual_error:
+            case commands.MissingRequiredArgument() as err:
+                embed = error_embed(description=str(err).capitalize())
+                await ctx.send(embed=embed)
 
-        elif isinstance(error, commands.BotMissingPermissions):
-            missing_perms = ", ".join(error.missing_permissions)
-            embed = EmbedFactory.error(
-                description=f"I am missing permission `{missing_perms}` to execute this command!"
-            )
-            await ctx.send(embed=embed)
+            case commands.MissingPermissions() as err:
+                missing_perms = ", ".join(err.missing_permissions)
+                embed = error_embed(
+                    description=(
+                        f"You are missing permission `{missing_perms}` to execute this command!"
+                    )
+                )
+                await ctx.send(embed=embed)
 
-        elif isinstance(error, commands.CommandOnCooldown):
-            minutes, seconds = divmod(error.retry_after, 60)
-            hours, minutes = divmod(minutes, 60)
-            hours %= 24
-            time_parts = []
-            if round(hours) > 0:
-                time_parts.append(f"{round(hours)} hours")
-            if round(minutes) > 0:
-                time_parts.append(f"{round(minutes)} minutes")
-            time_parts.append(f"{round(seconds)} seconds")
+            case commands.BotMissingPermissions() as err:
+                missing_perms = ", ".join(err.missing_permissions)
+                embed = error_embed(
+                    description=(
+                        f"I am missing permission `{missing_perms}` to execute this command!"
+                    )
+                )
+                await ctx.send(embed=embed)
 
-            embed = EmbedFactory.warning(
-                title="Cooldown!",
-                description=f"You can use this command again in {' '.join(time_parts)}.",
-            )
-            await ctx.send(embed=embed)
+            case commands.CommandOnCooldown() as err:
+                minutes, seconds = divmod(err.retry_after, 60)
+                hours, minutes = divmod(minutes, 60)
+                hours %= 24
+                time_parts: list[str] = []
+                if round(hours) > 0:
+                    time_parts.append(f"{round(hours)} hours")
+                if round(minutes) > 0:
+                    time_parts.append(f"{round(minutes)} minutes")
+                time_parts.append(f"{round(seconds)} seconds")
 
-        elif isinstance(error, exceptions.ModuleDisabled):
-            embed = EmbedFactory.error(
-                title="Module Disabled",
-                description=(
-                    f"The **{error.module_name.capitalize()}** module is currently disabled "
-                    "on this server."
-                ),
-            )
-            await ctx.send(embed=embed)
+                embed = warning_embed(
+                    title="Cooldown!",
+                    description=f"You can use this command again in {' '.join(time_parts)}.",
+                )
+                await ctx.send(embed=embed)
 
-        elif isinstance(error, exceptions.UserNotOwner):
-            embed = EmbedFactory.error(description="You are not the owner of this bot!")
-            await ctx.send(embed=embed)
+            case exceptions.ModuleDisabled() as err:
+                embed = error_embed(
+                    title="Module Disabled",
+                    description=(
+                        f"The **{err.module_name.capitalize()}** module is currently disabled "
+                        "on this server."
+                    ),
+                )
+                await ctx.send(embed=embed)
 
-        elif isinstance(error, exceptions.UserNotGuildOwner):
-            embed = EmbedFactory.error(
-                title="Server Owner Only",
-                description="You must be the server owner to execute this command!",
-            )
-            await ctx.send(embed=embed)
+            case exceptions.UserNotOwner():
+                embed = error_embed(description="You are not the owner of this bot!")
+                await ctx.send(embed=embed)
 
-        elif isinstance(error, exceptions.MissingRoleOrPermission):
-            embed = EmbedFactory.error(
-                title="Permission Denied",
-                description=str(error),
-            )
-            await ctx.send(embed=embed)
+            case exceptions.UserNotGuildOwner():
+                embed = error_embed(
+                    title="Server Owner Only",
+                    description="You must be the server owner to execute this command!",
+                )
+                await ctx.send(embed=embed)
 
-        elif isinstance(error, exceptions.HierarchyError):
-            embed = EmbedFactory.error(
-                title="Hierarchy Violation",
-                description=str(error),
-            )
-            await ctx.send(embed=embed)
-        else:
-            logger.error(
-                "command_error",
-                command=ctx.command.qualified_name if ctx.command else "unknown",
-                error=str(error),
-            )
-            raise error
+            case exceptions.MissingRoleOrPermission() as err:
+                embed = error_embed(
+                    title="Permission Denied",
+                    description=str(err),
+                )
+                await ctx.send(embed=embed)
+
+            case exceptions.HierarchyError() as err:
+                embed = error_embed(
+                    title="Hierarchy Violation",
+                    description=str(err),
+                )
+                await ctx.send(embed=embed)
+
+            case _:
+                logger.error(
+                    "command_error",
+                    command=ctx.command.qualified_name if ctx.command else "unknown",
+                    error=str(actual_error),
+                )
+                raise actual_error
 
 
 async def main() -> None:

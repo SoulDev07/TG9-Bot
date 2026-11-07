@@ -9,7 +9,7 @@ import discord
 from discord import app_commands
 
 from helpers import exceptions
-from helpers.embeds import EmbedFactory
+from helpers.embeds import error_embed, warning_embed
 from helpers.logger import get_logger
 
 if TYPE_CHECKING:
@@ -29,7 +29,7 @@ class BotCommandTree(app_commands.CommandTree):
 
         bot: DiscordBot = interaction.client  # type: ignore
         if await bot.blacklist_repo.is_blacklisted(interaction.user.id):
-            embed = EmbedFactory.error(
+            embed = error_embed(
                 title="Access Denied",
                 description="You are globally blacklisted from interacting with this bot.",
             )
@@ -47,65 +47,58 @@ class BotCommandTree(app_commands.CommandTree):
     ) -> None:
         """Centralized application command error handler for slash commands."""
         actual_error = getattr(error, "original", error)
+        cmd_name = interaction.command.qualified_name if interaction.command else "unknown"
 
-        if isinstance(actual_error, exceptions.HierarchyError):
-            embed = EmbedFactory.error(
-                title="Hierarchy Violation",
-                description=str(actual_error),
-            )
-        elif isinstance(actual_error, exceptions.MissingRoleOrPermission):
-            embed = EmbedFactory.error(
-                title="Permission Denied",
-                description=str(actual_error),
-            )
-        elif isinstance(actual_error, exceptions.UserNotGuildOwner):
-            embed = EmbedFactory.error(
-                title="Server Owner Only",
-                description="You must be the server owner to execute this command!",
-            )
-        elif isinstance(actual_error, exceptions.ModuleDisabled):
-            embed = EmbedFactory.error(
-                title="Module Disabled",
-                description=(
-                    f"The **{actual_error.module_name.capitalize()}** module is currently disabled "
-                    "on this server."
-                ),
-            )
-        elif isinstance(actual_error, exceptions.UserNotOwner):
-            embed = EmbedFactory.error(
-                description="You are not the owner of this bot!",
-            )
-        elif isinstance(actual_error, app_commands.CommandOnCooldown):
-            embed = EmbedFactory.warning(
-                title="Cooldown!",
-                description=(
-                    f"You can use this command again in {actual_error.retry_after:.1f} seconds."
-                ),
-            )
-        elif isinstance(actual_error, app_commands.MissingPermissions):
-            missing_perms = ", ".join(actual_error.missing_permissions)
-            embed = EmbedFactory.error(
-                title="Error!",
-                description=(
-                    f"You are missing permission `{missing_perms}` to execute this command!"
-                ),
-            )
-        elif isinstance(actual_error, app_commands.BotMissingPermissions):
-            missing_perms = ", ".join(actual_error.missing_permissions)
-            embed = EmbedFactory.error(
-                title="Error!",
-                description=(f"I am missing permission `{missing_perms}` to execute this command!"),
-            )
-        else:
-            logger.error(
-                "app_command_error",
-                command=interaction.command.name if interaction.command else "unknown",
-                error=str(actual_error),
-            )
-            embed = EmbedFactory.error(
-                title="Error!",
-                description="An unexpected error occurred while executing this command.",
-            )
+        match actual_error:
+            case exceptions.HierarchyError() as err:
+                embed = error_embed(title="Hierarchy Violation", description=str(err))
+            case exceptions.MissingRoleOrPermission() as err:
+                embed = error_embed(title="Permission Denied", description=str(err))
+            case exceptions.UserNotGuildOwner():
+                embed = error_embed(
+                    title="Server Owner Only",
+                    description="You must be the server owner to execute this command!",
+                )
+            case exceptions.ModuleDisabled() as err:
+                embed = error_embed(
+                    title="Module Disabled",
+                    description=(
+                        f"The **{err.module_name.capitalize()}** module is currently disabled "
+                        "on this server."
+                    ),
+                )
+            case exceptions.UserNotOwner():
+                embed = error_embed(description="You are not the owner of this bot!")
+            case app_commands.CommandOnCooldown() as err:
+                embed = warning_embed(
+                    title="Cooldown!",
+                    description=f"You can use this command again in {err.retry_after:.1f} seconds.",
+                )
+            case app_commands.MissingPermissions() as err:
+                missing = ", ".join(err.missing_permissions)
+                embed = error_embed(
+                    title="Error!",
+                    description=f"You are missing permission `{missing}` to execute this command!",
+                )
+            case app_commands.BotMissingPermissions() as err:
+                missing = ", ".join(err.missing_permissions)
+                embed = error_embed(
+                    title="Error!",
+                    description=f"I am missing permission `{missing}` to execute this command!",
+                )
+            case _:
+                logger.error(
+                    "app_command_error",
+                    command=cmd_name,
+                    user=str(interaction.user),
+                    user_id=interaction.user.id,
+                    guild_id=interaction.guild_id,
+                    error=str(actual_error),
+                )
+                embed = error_embed(
+                    title="Error!",
+                    description="An unexpected error occurred while executing this command.",
+                )
 
         with contextlib.suppress(discord.HTTPException):
             if not interaction.response.is_done():

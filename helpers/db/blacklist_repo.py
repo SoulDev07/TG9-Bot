@@ -1,5 +1,7 @@
 """Repository handling global user blacklists with in-memory caching."""
 
+from __future__ import annotations
+
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
@@ -16,14 +18,16 @@ logger = get_logger()
 class BlacklistRepository(BaseRepository):
     """Repository handling global user blacklists with in-memory caching."""
 
-    def __init__(self, db: "DatabaseManager") -> None:
+    __slots__ = ("_cache", "_cache_warmed")
+
+    def __init__(self, db: DatabaseManager) -> None:
         super().__init__(db)
         self._cache: set[int] = set()
-        self._cache_warmed = False
+        self._cache_warmed: bool = False
 
     async def warm_cache(self) -> None:
         """Pre-populate the in-memory blacklist cache on startup."""
-        async with await self.db.get_connection() as conn:
+        async with self.db.read() as conn:
             cursor = await conn.execute("SELECT user_id FROM blacklist")
             rows = await cursor.fetchall()
             self._cache = {row["user_id"] for row in rows}
@@ -35,13 +39,23 @@ class BlacklistRepository(BaseRepository):
         if self._cache_warmed:
             return user_id in self._cache
 
-        async with await self.db.get_connection() as conn:
+        async with self.db.read() as conn:
             cursor = await conn.execute(
                 "SELECT 1 FROM blacklist WHERE user_id = ?",
                 (user_id,),
             )
             row = await cursor.fetchone()
             return row is not None
+
+    async def count(self) -> int:
+        """Get the total count of blacklisted users."""
+        if self._cache_warmed:
+            return len(self._cache)
+
+        async with self.db.read() as conn:
+            cursor = await conn.execute("SELECT COUNT(*) AS total FROM blacklist")
+            row = await cursor.fetchone()
+            return int(row["total"]) if row else 0
 
     async def add(
         self,
@@ -52,7 +66,7 @@ class BlacklistRepository(BaseRepository):
         """Add a user to the global blacklist."""
         now = datetime.now(UTC)
         now_iso = now.isoformat()
-        async with await self.db.get_connection() as conn:
+        async with self.db.write() as conn:
             await conn.execute(
                 """
                 INSERT OR REPLACE INTO blacklist (user_id, reason, created_at, created_by)
@@ -72,7 +86,7 @@ class BlacklistRepository(BaseRepository):
 
     async def remove(self, user_id: int) -> bool:
         """Remove a user from the global blacklist. Returns True if deleted."""
-        async with await self.db.get_connection() as conn:
+        async with self.db.write() as conn:
             cursor = await conn.execute(
                 "DELETE FROM blacklist WHERE user_id = ?",
                 (user_id,),
@@ -86,7 +100,7 @@ class BlacklistRepository(BaseRepository):
 
     async def get_all(self) -> list[BlacklistEntry]:
         """Fetch all blacklisted user records."""
-        async with await self.db.get_connection() as conn:
+        async with self.db.read() as conn:
             cursor = await conn.execute(
                 """
                 SELECT user_id, reason, created_at, created_by
@@ -104,13 +118,3 @@ class BlacklistRepository(BaseRepository):
                 )
                 for row in rows
             ]
-
-    async def count(self) -> int:
-        """Count total blacklisted users."""
-        if self._cache_warmed:
-            return len(self._cache)
-
-        async with await self.db.get_connection() as conn:
-            cursor = await conn.execute("SELECT COUNT(*) AS count FROM blacklist")
-            row = await cursor.fetchone()
-            return row["count"] if row else 0

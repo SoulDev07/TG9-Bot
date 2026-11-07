@@ -1,8 +1,11 @@
 """Help command for TG9 Bot."""
 
-from discord.ext import commands
+from __future__ import annotations
 
-from helpers.embeds import EmbedFactory
+from discord.ext import commands
+from discord.ext.commands import Context
+
+from helpers.embeds import success_embed
 
 
 class Help(commands.Cog, name="help"):
@@ -12,11 +15,11 @@ class Help(commands.Cog, name="help"):
         self.bot = bot
 
     @commands.hybrid_command(name="help", description="List all available commands")
-    async def help(self, ctx):
+    async def help(self, ctx: Context):
         """List all commands from every loaded cog."""
         prefix = getattr(self.bot.config, "bot_prefix", "Tg9 ")
 
-        embed = EmbedFactory.success(
+        embed = success_embed(
             title="Help",
             description="List of available commands:",
         )

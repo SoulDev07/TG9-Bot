@@ -1,12 +1,14 @@
 """Stores moderation commands of Bot"""
 
+from __future__ import annotations
+
 import discord
 from discord.ext import commands
 from discord.ext.commands import Context
 
 from helpers import checks, exceptions
-from helpers.embeds import EmbedFactory
-from services.moderation import ModerationService
+from helpers.embeds import error_embed, info_embed, make_embed, success_embed
+from services.moderation import ban_member, kick_member, purge_channel, warn_member
 
 
 class Moderation(commands.Cog, name="moderation"):
@@ -45,7 +47,7 @@ class Moderation(commands.Cog, name="moderation"):
     @checks.mod_or_permissions(manage_messages=True)
     async def embed(self, ctx: Context, *, sentence: str):
         """The bot will say anything you want in embeds."""
-        embed = EmbedFactory.success(description=sentence)
+        embed = success_embed(description=sentence)
         await ctx.send(embed=embed)
 
     @commands.hybrid_command(
@@ -62,10 +64,10 @@ class Moderation(commands.Cog, name="moderation"):
         reason: str = "Not specified",
     ):
         """Warns a user in their private messages."""
-        await ModerationService.warn_member(ctx, member, reason)
-        embed = EmbedFactory.success(
+        case = await warn_member(ctx, member, reason)
+        embed = success_embed(
             title="User Warned!",
-            description=f"**{member}** was warned by **{ctx.author}**!",
+            description=f"**{member}** was warned by **{ctx.author}**! (Case #{case.case_number})",
             fields=[("Reason", reason, False)],
         )
         await ctx.send(embed=embed)
@@ -82,15 +84,17 @@ class Moderation(commands.Cog, name="moderation"):
     ):
         """Kick a user out of the server."""
         try:
-            await ModerationService.kick_member(ctx, member, reason)
-            embed = EmbedFactory.success(
+            case = await kick_member(ctx, member, reason)
+            embed = success_embed(
                 title="User Kicked!",
-                description=f"**{member}** was kicked by **{ctx.author}**!",
+                description=(
+                    f"**{member}** was kicked by **{ctx.author}**! (Case #{case.case_number})"
+                ),
                 fields=[("Reason", reason, False)],
             )
             await ctx.send(embed=embed)
         except discord.Forbidden:
-            embed = EmbedFactory.error(
+            embed = error_embed(
                 description=(
                     f"An error occurred while trying to kick {member.mention}. "
                     "Make sure my role is placed higher than the target user's role."
@@ -110,15 +114,17 @@ class Moderation(commands.Cog, name="moderation"):
     ):
         """Ban a user from the server."""
         try:
-            await ModerationService.ban_member(ctx, member, reason)
-            embed = EmbedFactory.success(
+            case = await ban_member(ctx, member, reason)
+            embed = success_embed(
                 title="User Banned!",
-                description=f"**{member}** was banned by **{ctx.author}**!",
+                description=(
+                    f"**{member}** was banned by **{ctx.author}**! (Case #{case.case_number})"
+                ),
                 fields=[("Reason", reason, False)],
             )
             await ctx.send(embed=embed)
         except discord.Forbidden:
-            embed = EmbedFactory.error(
+            embed = error_embed(
                 description=(
                     f"An error occurred while trying to ban {member.mention}. "
                     "Make sure my role is placed higher than the target user's role."
@@ -132,14 +138,14 @@ class Moderation(commands.Cog, name="moderation"):
     async def purge(self, ctx: Context, amount: int):
         """Delete a number of messages."""
         if amount < 1:
-            embed = EmbedFactory.error(
+            embed = error_embed(
                 description=f"`{amount}` is not a valid number. Must be at least 1."
             )
             await ctx.send(embed=embed)
             return
 
-        purged_count = await ModerationService.purge_channel(ctx.channel, amount)
-        embed = EmbedFactory.success(
+        purged_count = await purge_channel(ctx.channel, amount)
+        embed = success_embed(
             title="Chat Cleared!",
             description=f"**{ctx.author}** cleared **{purged_count}** messages!",
         )
@@ -154,7 +160,7 @@ class Moderation(commands.Cog, name="moderation"):
     async def roles(self, ctx: Context):
         """Manage administrative and moderator roles for this server."""
         if ctx.invoked_subcommand is None:
-            embed = EmbedFactory.info(
+            embed = info_embed(
                 title="Server Role Configuration",
                 description=(
                     "Configure administrative and moderator roles for this server:\n"
@@ -173,7 +179,7 @@ class Moderation(commands.Cog, name="moderation"):
     async def add_admin_role(self, ctx: Context, role: discord.Role):
         """Designate an administrator role for this server."""
         await self.bot.guild_repo.add_role(ctx.guild.id, role.id, "admin")
-        embed = EmbedFactory.success(
+        embed = success_embed(
             title="Role Updated",
             description=f"Successfully added {role.mention} as an **Administrator** role.",
         )
@@ -186,13 +192,13 @@ class Moderation(commands.Cog, name="moderation"):
         """Remove a designated administrator role from this server."""
         removed = await self.bot.guild_repo.remove_role(ctx.guild.id, role.id, "admin")
         if not removed:
-            embed = EmbedFactory.error(
+            embed = error_embed(
                 title="Error",
                 description=f"{role.mention} is not registered as an Administrator role.",
             )
             await ctx.send(embed=embed)
             return
-        embed = EmbedFactory.success(
+        embed = success_embed(
             title="Role Removed",
             description=f"Successfully removed {role.mention} from Administrator roles.",
         )
@@ -204,7 +210,7 @@ class Moderation(commands.Cog, name="moderation"):
     async def add_mod_role(self, ctx: Context, role: discord.Role):
         """Designate a moderator role for this server."""
         await self.bot.guild_repo.add_role(ctx.guild.id, role.id, "mod")
-        embed = EmbedFactory.success(
+        embed = success_embed(
             title="Role Updated",
             description=f"Successfully added {role.mention} as a **Moderator** role.",
         )
@@ -217,13 +223,13 @@ class Moderation(commands.Cog, name="moderation"):
         """Remove a designated moderator role from this server."""
         removed = await self.bot.guild_repo.remove_role(ctx.guild.id, role.id, "mod")
         if not removed:
-            embed = EmbedFactory.error(
+            embed = error_embed(
                 title="Error",
                 description=f"{role.mention} is not registered as a Moderator role.",
             )
             await ctx.send(embed=embed)
             return
-        embed = EmbedFactory.success(
+        embed = success_embed(
             title="Role Removed",
             description=f"Successfully removed {role.mention} from Moderator roles.",
         )
@@ -246,7 +252,7 @@ class Moderation(commands.Cog, name="moderation"):
             if ctx.guild.get_role(rid)
         ]
 
-        embed = EmbedFactory.create(
+        embed = make_embed(
             title=f"Configured Roles — {ctx.guild.name}",
             fields=[
                 (

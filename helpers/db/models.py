@@ -1,12 +1,35 @@
-"""Pydantic v2 schemas for database entities."""
+"""Pydantic v2 schemas and data structures for database entities."""
 
+from __future__ import annotations
+
+import enum
 from datetime import UTC, datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class GuildModuleFlag(enum.IntFlag):
+    """Bitmask representation for high-speed module enablement checks."""
+
+    NONE = 0
+    MODERATION = 1 << 0
+    FUN = 1 << 1
+    GENERAL = 1 << 2
+    ALL = MODERATION | FUN | GENERAL
+
+    @classmethod
+    def from_name(cls, name: str) -> GuildModuleFlag:
+        """Resolve a module string name to its corresponding IntFlag."""
+        try:
+            return cls[name.upper()]
+        except KeyError:
+            return cls.NONE
 
 
 class GuildSettings(BaseModel):
     """Configuration settings for a Discord guild."""
+
+    model_config = ConfigDict(frozen=True, extra="ignore")
 
     guild_id: int
     prefix: str = "!"
@@ -19,6 +42,8 @@ class GuildSettings(BaseModel):
 class GuildModule(BaseModel):
     """Module toggle state for a Discord guild."""
 
+    model_config = ConfigDict(frozen=True, extra="ignore")
+
     guild_id: int
     module: str
     enabled: bool = True
@@ -26,6 +51,8 @@ class GuildModule(BaseModel):
 
 class GuildRole(BaseModel):
     """Configured administrative or moderation role for a Discord guild."""
+
+    model_config = ConfigDict(frozen=True, extra="ignore")
 
     guild_id: int
     role_id: int
@@ -35,6 +62,8 @@ class GuildRole(BaseModel):
 class BlacklistEntry(BaseModel):
     """Global user blacklist entry."""
 
+    model_config = ConfigDict(frozen=True, extra="ignore")
+
     user_id: int
     reason: str = "No reason specified"
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
@@ -43,6 +72,8 @@ class BlacklistEntry(BaseModel):
 
 class ModCase(BaseModel):
     """Case-tracked moderation action."""
+
+    model_config = ConfigDict(frozen=True, extra="ignore")
 
     id: int | None = None
     guild_id: int

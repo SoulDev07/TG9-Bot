@@ -1,4 +1,6 @@
-"""Abstract base repository providing shared database access semantics."""
+"""Base repository providing shared database access semantics."""
+
+from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
@@ -9,5 +11,7 @@ if TYPE_CHECKING:
 class BaseRepository:
     """Base repository encapsulating DatabaseManager reference."""
 
-    def __init__(self, db: "DatabaseManager") -> None:
+    __slots__ = ("db",)
+
+    def __init__(self, db: DatabaseManager) -> None:
         self.db = db

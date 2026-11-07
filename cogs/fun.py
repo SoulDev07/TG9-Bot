@@ -1,5 +1,7 @@
 """Stores fun commands of Bot"""
 
+from __future__ import annotations
+
 import contextlib
 import random
 
@@ -8,7 +10,7 @@ from discord.ext import commands
 from discord.ext.commands import Context
 
 from helpers import exceptions
-from helpers.embeds import EmbedColor, EmbedFactory
+from helpers.embeds import EmbedColor, make_embed
 
 EMBED_COLORS = {
     "default": EmbedColor.WARNING,
@@ -42,7 +44,7 @@ class Fun(commands.Cog, name="fun"):
         desc: str = "",
         color: int = EmbedColor.WARNING,
     ) -> discord.Embed:
-        return EmbedFactory.create(
+        return make_embed(
             title=title,
             description=desc,
             color=color,
