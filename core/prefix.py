@@ -19,9 +19,3 @@ async def dynamic_prefix_resolver(bot: DiscordBot, message: discord.Message) -> 
 
     prefix = await bot.guild_repo.get_prefix(message.guild.id, default=default_prefix)
     return commands.when_mentioned_or(prefix)(bot, message)
-
-
-class DynamicPrefixResolver:
-    """Namespace alias for backward compatibility."""
-
-    resolve = staticmethod(dynamic_prefix_resolver)

@@ -126,13 +126,3 @@ def modlog_case_embed(
         timestamp=case.created_at,
         footer=f"Case ID: {case.id or case.case_number}",
     )
-
-
-class EmbedFactory:
-    """Namespace alias for backward compatibility with class-based factory usage."""
-
-    create = staticmethod(make_embed)
-    success = staticmethod(success_embed)
-    error = staticmethod(error_embed)
-    warning = staticmethod(warning_embed)
-    info = staticmethod(info_embed)

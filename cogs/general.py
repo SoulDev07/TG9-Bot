@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import platform
 import time
 from datetime import UTC, datetime
@@ -34,7 +35,9 @@ class General(commands.Cog, name="general"):
         uptime = humanize.naturaldelta(now - start_time)
 
         guilds_count = len(self.bot.guilds)
-        total_members = sum(guild.member_count or 0 for guild in self.bot.guilds)
+        total_members = await asyncio.to_thread(
+            lambda: sum(guild.member_count or 0 for guild in self.bot.guilds)
+        )
 
         if ctx.guild:
             prefix = await self.bot.guild_repo.get_prefix(

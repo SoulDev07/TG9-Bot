@@ -7,14 +7,10 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import aiosqlite
 
 from helpers.logger import get_logger
-
-if TYPE_CHECKING:
-    pass
 
 logger = get_logger()
 
@@ -80,44 +76,6 @@ CREATE INDEX IF NOT EXISTS idx_guild_modules_guild ON guild_modules(guild_id);
 """
 
 
-class ConnectionContext:
-    """Async context manager supporting direct and awaitable acquisition."""
-
-    __slots__ = ("_conn", "_manager")
-
-    def __init__(self, manager: DatabaseManager) -> None:
-        self._manager = manager
-        self._conn: aiosqlite.Connection | None = None
-
-    def __await__(self):
-        async def _async_self() -> ConnectionContext:
-            return self
-
-        return _async_self().__await__()
-
-    async def __aenter__(self) -> aiosqlite.Connection:
-        active = _current_conn.get()
-        if active is not None:
-            self._conn = active
-            return self._conn
-
-        self._conn = await self._manager._acquire_writer()
-        return self._conn
-
-    async def __aexit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc_val: BaseException | None,
-        exc_tb: object,
-    ) -> None:
-        if self._conn is not None:
-            try:
-                if exc_type is not None:
-                    await self._conn.rollback()
-            finally:
-                await self._manager._release_writer()
-
-
 class DatabaseManager:
     """High-performance SQLite pool managing concurrent WAL readers and a serialized writer.
 
@@ -126,6 +84,7 @@ class DatabaseManager:
         - Reader Pool: Concurrent reader connections executed via a bounded queue.
         - Deadlock-Free Task Borrowing: Coroutines nesting connection contexts reuse the held
           connection via contextvars, avoiding self-deadlocks and pool starvation.
+        - Threading: Blocking directory creation offloaded to worker threads via asyncio.to_thread.
     """
 
     __slots__ = (
@@ -165,7 +124,7 @@ class DatabaseManager:
 
     async def _create_connection(self) -> aiosqlite.Connection:
         """Create and tune an individual SQLite connection with optimal pragmas."""
-        Path(self._db_path).parent.mkdir(parents=True, exist_ok=True)
+        await asyncio.to_thread(Path(self._db_path).parent.mkdir, parents=True, exist_ok=True)
         conn = await aiosqlite.connect(self._db_path)
         conn.row_factory = aiosqlite.Row
         await conn.execute("PRAGMA foreign_keys = ON;")
@@ -250,10 +209,6 @@ class DatabaseManager:
             yield conn
 
     __call__ = connection
-
-    def get_connection(self) -> ConnectionContext:
-        """Backward-compatible connection context manager."""
-        return ConnectionContext(self)
 
     async def initialize(self) -> None:
         """Create database directory, apply tables and indexes, and verify WAL mode."""

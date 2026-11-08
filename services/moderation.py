@@ -132,14 +132,3 @@ async def purge_channel(
     """Purge a specified number of messages from a channel."""
     purged = await channel.purge(limit=amount)
     return len(purged)
-
-
-class ModerationService:
-    """Namespace alias for backward compatibility with class-based service callers."""
-
-    validate_target = staticmethod(validate_target)
-    record_case = staticmethod(record_case)
-    warn_member = staticmethod(warn_member)
-    kick_member = staticmethod(kick_member)
-    ban_member = staticmethod(ban_member)
-    purge_channel = staticmethod(purge_channel)

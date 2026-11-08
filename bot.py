@@ -57,11 +57,13 @@ class DiscordBot(commands.Bot):
     async def load_cogs(self) -> None:
         """Load all extension modules from the cogs directory."""
         cogs_dir = os.path.join(".", "cogs")
-        if not os.path.isdir(cogs_dir):
+        is_dir = await asyncio.to_thread(os.path.isdir, cogs_dir)
+        if not is_dir:
             logger.warning("cogs_directory_missing", path=cogs_dir)
             return
 
-        for file in sorted(os.listdir(cogs_dir)):
+        files = await asyncio.to_thread(os.listdir, cogs_dir)
+        for file in sorted(files):
             if file.endswith(".py") and not file.startswith("__"):
                 extension = file[:-3]
                 try:

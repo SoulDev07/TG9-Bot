@@ -57,9 +57,3 @@ def can_moderate(ctx: Context, target: discord.Member) -> tuple[bool, str | None
         return True, None
     except HierarchyError as exc:
         return False, str(exc)
-
-
-class HierarchyValidator:
-    """Namespace alias for backward compatibility with class-based validation calls."""
-
-    validate = staticmethod(validate_hierarchy)

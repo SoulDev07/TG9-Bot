@@ -1,6 +1,6 @@
-"""Core bot application lifecycle and interaction infrastructure."""
+"""Core command processing, tree routing, and prefix management."""
 
-from core.prefix import DynamicPrefixResolver
+from core.prefix import dynamic_prefix_resolver
 from core.tree import BotCommandTree
 
-__all__ = ["BotCommandTree", "DynamicPrefixResolver"]
+__all__ = ["BotCommandTree", "dynamic_prefix_resolver"]
