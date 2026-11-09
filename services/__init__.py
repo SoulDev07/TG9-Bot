@@ -2,6 +2,7 @@
 
 from services.moderation import (
     ban_member,
+    edit_case_reason,
     kick_member,
     purge_channel,
     record_case,
@@ -11,6 +12,7 @@ from services.moderation import (
 
 __all__ = [
     "ban_member",
+    "edit_case_reason",
     "kick_member",
     "purge_channel",
     "record_case",

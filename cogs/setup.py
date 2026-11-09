@@ -69,9 +69,6 @@ class Setup(commands.Cog, name="setup"):
         await ctx.send(embed=embed, view=view, ephemeral=True)
 
 
-async def setup_cog(bot: DiscordBot):
+async def setup(bot: DiscordBot):
     """Register Setup cog."""
     await bot.add_cog(Setup(bot))
-
-
-setup = setup_cog

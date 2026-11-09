@@ -59,7 +59,7 @@ class SetupWizardView(discord.ui.View):
         mod_display = mod_role.mention if mod_role else "*Not configured*"
 
         return make_embed(
-            title=f"Server Setup Wizard — {self.guild.name}",
+            title=f"Server Setup Wizard: {self.guild.name}",
             description=(
                 "Configure your server's key channels and authority roles below.\n"
                 "Selections update the preview in real-time. Click **Save & Apply** when finished."

@@ -123,7 +123,7 @@ class SettingsDashboardView(discord.ui.View):
             module_lines.append(f"• **{mod.capitalize()}**: {status_indicator}")
 
         return make_embed(
-            title=f"Server Settings Dashboard — {self.guild.name}",
+            title=f"Server Settings Dashboard: {self.guild.name}",
             description=(
                 "Manage server configuration and toggle modules in real-time.\n"
                 "Click the buttons below to enable or disable specific features."

@@ -127,6 +127,35 @@ class ModCaseRepository(BaseRepository):
                 created_at=datetime.fromisoformat(row["created_at"]),
             )
 
+    async def get_cases_for_user(self, guild_id: int, user_id: int) -> list[ModCase]:
+        """Fetch all moderation cases for a specific user ordered by case number descending."""
+        async with self.db.read() as conn:
+            cursor = await conn.execute(
+                """
+                SELECT id, guild_id, case_number, action, user_id,
+                       moderator_id, reason, message_id, created_at
+                FROM mod_cases
+                WHERE guild_id = ? AND user_id = ?
+                ORDER BY case_number DESC
+                """,
+                (guild_id, user_id),
+            )
+            rows = await cursor.fetchall()
+            return [
+                ModCase(
+                    id=row["id"],
+                    guild_id=row["guild_id"],
+                    case_number=row["case_number"],
+                    action=row["action"],
+                    user_id=row["user_id"],
+                    moderator_id=row["moderator_id"],
+                    reason=row["reason"],
+                    message_id=row["message_id"],
+                    created_at=datetime.fromisoformat(row["created_at"]),
+                )
+                for row in rows
+            ]
+
     async def update_reason(self, guild_id: int, case_number: int, reason: str) -> bool:
         """Update the reason for an existing moderation case."""
         async with self.db.write() as conn:

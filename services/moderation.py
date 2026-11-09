@@ -75,6 +75,37 @@ async def record_case(
     return case
 
 
+async def edit_case_reason(
+    ctx: Context,
+    case_number: int,
+    new_reason: str,
+) -> tuple[bool, str, ModCase | None]:
+    """Update a case's reason in SQLite and live-edit its audit log embed in Discord."""
+    case = await ctx.bot.mod_case_repo.get_case(ctx.guild.id, case_number)
+    if not case:
+        return False, f"Case #{case_number} was not found for this server.", None
+
+    await ctx.bot.mod_case_repo.update_reason(ctx.guild.id, case_number, new_reason)
+    updated_case = case.model_copy(update={"reason": new_reason})
+
+    settings = await ctx.bot.guild_repo.get(ctx.guild.id)
+    if settings and settings.modlog_channel_id and case.message_id:
+        channel = ctx.guild.get_channel(settings.modlog_channel_id)
+        if isinstance(channel, discord.TextChannel | discord.Thread):
+            with contextlib.suppress(discord.NotFound, discord.Forbidden, discord.HTTPException):
+                msg = await channel.fetch_message(case.message_id)
+                target = ctx.guild.get_member(case.user_id) or await ctx.bot.fetch_user(
+                    case.user_id
+                )
+                mod = ctx.guild.get_member(case.moderator_id) or await ctx.bot.fetch_user(
+                    case.moderator_id
+                )
+                embed = modlog_case_embed(updated_case, user=target, moderator=mod)
+                await msg.edit(embed=embed)
+
+    return True, f"Case #{case_number} reason has been successfully updated.", updated_case
+
+
 async def warn_member(
     ctx: Context,
     member: discord.Member,

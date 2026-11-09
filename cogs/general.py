@@ -47,7 +47,7 @@ class General(commands.Cog, name="general"):
             prefix = getattr(self.bot.config, "bot_prefix", "Tg9 ")
 
         embed = make_embed(
-            title="TG9 Bot — Status & Information",
+            title="TG9 Bot: Status & Information",
             description="A modern, general-purpose Discord bot.",
             author_name=self.bot.user.name if self.bot.user else "TG9",
             author_icon=self.bot.user.display_avatar.url if self.bot.user else None,
