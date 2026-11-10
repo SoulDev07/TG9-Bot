@@ -4,13 +4,16 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
 import discord
+import humanize
 from discord.ext.commands import Context
 
 from helpers.checks import get_audit_reason
 from helpers.embeds import modlog_case_embed
+from helpers.exceptions import HierarchyError
 from helpers.hierarchy import validate_hierarchy
 from helpers.logger import get_logger
 
@@ -30,7 +33,7 @@ def validate_target(ctx: Context, member: discord.Member) -> None:
 async def _dispatch_modlog(
     ctx: Context,
     case: ModCase,
-    target: discord.Member | discord.User,
+    target: discord.Member | discord.User | discord.Object,
 ) -> None:
     """Background task to deliver and persist the modlog audit case embed."""
     try:
@@ -42,7 +45,14 @@ async def _dispatch_modlog(
         if not isinstance(channel, discord.TextChannel | discord.Thread):
             return
 
-        embed = modlog_case_embed(case, user=target, moderator=ctx.author)
+        user_display: discord.User | discord.Member | None = None
+        if isinstance(target, discord.Member | discord.User):
+            user_display = target
+        else:
+            with contextlib.suppress(discord.HTTPException):
+                user_display = await ctx.bot.fetch_user(target.id)
+
+        embed = modlog_case_embed(case, user=user_display, moderator=ctx.author)
         message = await channel.send(embed=embed)
         await ctx.bot.mod_case_repo.update_message_id(ctx.guild.id, case.case_number, message.id)
     except Exception as exc:
@@ -57,7 +67,7 @@ async def _dispatch_modlog(
 async def record_case(
     ctx: Context,
     action: str,
-    target: discord.Member | discord.User,
+    target: discord.Member | discord.User | discord.Object,
     reason: str,
 ) -> ModCase:
     """Record a moderation case in the database and dispatch audit log asynchronously."""
@@ -68,7 +78,6 @@ async def record_case(
         moderator_id=ctx.author.id,
         reason=reason,
     )
-    # Fire and forget modlog dispatch to avoid blocking command completion
     task = asyncio.create_task(_dispatch_modlog(ctx, case, target))
     _background_tasks.add(task)
     task.add_done_callback(_background_tasks.discard)
@@ -154,6 +163,146 @@ async def ban_member(
 
     await member.ban(reason=audit_reason)
     return await record_case(ctx, action="ban", target=member, reason=reason)
+
+
+async def softban_member(
+    ctx: Context,
+    member: discord.Member,
+    days: int = 1,
+    reason: str = "Not specified",
+) -> ModCase:
+    """Ban a user and immediately unban them to purge recent messages without permanent ban."""
+    validate_target(ctx, member)
+    clean_days = max(1, min(7, days))
+    audit_reason = get_audit_reason(ctx.author, f"Softban ({clean_days}d purge): {reason}")
+
+    with contextlib.suppress(discord.Forbidden, discord.HTTPException):
+        await member.send(
+            f"You were softbanned from **{ctx.guild.name}** by **{ctx.author}**!\nReason: {reason}"
+        )
+
+    await ctx.guild.ban(member, reason=audit_reason, delete_message_seconds=clean_days * 86400)
+    await ctx.guild.unban(member, reason=f"Softban unban: {reason}")
+    return await record_case(ctx, action="softban", target=member, reason=reason)
+
+
+async def tempban_member(
+    ctx: Context,
+    member: discord.Member,
+    duration: timedelta,
+    reason: str = "Not specified",
+) -> ModCase:
+    """Temporarily ban a member and record the expiration in SQLite."""
+    validate_target(ctx, member)
+    unban_at = datetime.now(UTC) + duration
+    duration_str = humanize.naturaldelta(duration)
+    audit_reason = get_audit_reason(ctx.author, f"Tempban ({duration_str}): {reason}")
+
+    with contextlib.suppress(discord.Forbidden, discord.HTTPException):
+        await member.send(
+            f"You were temporarily banned from **{ctx.guild.name}** for {duration_str}!\n"
+            f"Reason: {reason}"
+        )
+
+    await member.ban(reason=audit_reason)
+    await ctx.bot.tempban_repo.add_tempban(ctx.guild.id, member.id, unban_at, reason)
+    case_reason = f"{reason} (Until {unban_at.strftime('%Y-%m-%d %H:%M UTC')})"
+    return await record_case(ctx, action="tempban", target=member, reason=case_reason)
+
+
+async def hackban_user(
+    ctx: Context,
+    user_id: int,
+    reason: str = "Not specified",
+) -> ModCase:
+    """Pre-emptively ban a malicious user ID before they join the server."""
+    if user_id == ctx.guild.owner_id:
+        raise HierarchyError("You cannot ban the server owner.")
+    if user_id == ctx.bot.user.id:
+        raise HierarchyError("I cannot ban myself.")
+    if user_id == ctx.author.id:
+        raise HierarchyError("You cannot ban yourself.")
+
+    member = ctx.guild.get_member(user_id)
+    if member:
+        validate_target(ctx, member)
+        return await ban_member(ctx, member, reason)
+
+    audit_reason = get_audit_reason(ctx.author, f"Pre-ban / Hackban: {reason}")
+    target_obj = discord.Object(id=user_id)
+    await ctx.guild.ban(target_obj, reason=audit_reason)
+
+    user_obj: discord.User | discord.Object = target_obj
+    with contextlib.suppress(discord.HTTPException):
+        user_obj = await ctx.bot.fetch_user(user_id)
+
+    return await record_case(ctx, action="hackban", target=user_obj, reason=reason)
+
+
+async def unban_member(
+    ctx: Context,
+    user: discord.User,
+    reinvite: bool = False,
+    reason: str = "Not specified",
+) -> tuple[ModCase, str | None]:
+    """Unban a user and optionally generate and deliver a single-use reinvite link."""
+    audit_reason = get_audit_reason(ctx.author, f"Unban: {reason}")
+    await ctx.guild.unban(user, reason=audit_reason)
+    await ctx.bot.tempban_repo.remove_tempban(ctx.guild.id, user.id)
+
+    case = await record_case(ctx, action="unban", target=user, reason=reason)
+    invite_url: str | None = None
+
+    if reinvite and isinstance(ctx.channel, discord.TextChannel | discord.VoiceChannel):
+        with contextlib.suppress(discord.Forbidden, discord.HTTPException):
+            invite = await ctx.channel.create_invite(
+                max_uses=1,
+                max_age=86400,
+                unique=True,
+                reason=f"Unban reinvite for {user}",
+            )
+            invite_url = invite.url
+            await user.send(
+                f"You were unbanned from **{ctx.guild.name}** by **{ctx.author}**!\n"
+                f"Here is a one-time invite link to rejoin: {invite.url}"
+            )
+
+    return case, invite_url
+
+
+async def massban_users(
+    ctx: Context,
+    user_ids: list[int],
+    reason: str = "Not specified",
+) -> tuple[list[int], list[int]]:
+    """Ban multiple user IDs in bulk and record infractions."""
+    banned: list[int] = []
+    failed: list[int] = []
+    audit_reason = get_audit_reason(ctx.author, f"Massban: {reason}")
+
+    for uid in user_ids:
+        if uid in (ctx.guild.owner_id, ctx.bot.user.id, ctx.author.id):
+            failed.append(uid)
+            continue
+
+        member = ctx.guild.get_member(uid)
+        if member:
+            try:
+                validate_target(ctx, member)
+            except Exception:
+                failed.append(uid)
+                continue
+
+        try:
+            target_obj = discord.Object(id=uid)
+            await ctx.guild.ban(target_obj, reason=audit_reason)
+            banned.append(uid)
+            user_obj: discord.User | discord.Object = member or target_obj
+            await record_case(ctx, action="massban", target=user_obj, reason=reason)
+        except Exception:
+            failed.append(uid)
+
+    return banned, failed
 
 
 async def purge_channel(

@@ -73,6 +73,16 @@ CREATE TABLE IF NOT EXISTS mod_cases (
 
 CREATE INDEX IF NOT EXISTS idx_mod_cases_guild_user ON mod_cases(guild_id, user_id);
 CREATE INDEX IF NOT EXISTS idx_guild_modules_guild ON guild_modules(guild_id);
+
+CREATE TABLE IF NOT EXISTS temp_bans (
+    guild_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    unban_at TEXT NOT NULL,
+    reason TEXT NOT NULL DEFAULT 'Temporary ban expired',
+    PRIMARY KEY (guild_id, user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_temp_bans_unban_at ON temp_bans(unban_at);
 """
 
 

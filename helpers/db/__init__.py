@@ -6,6 +6,7 @@ from helpers.db.database import DatabaseManager
 from helpers.db.guild_repo import GuildRepository
 from helpers.db.modcase_repo import ModCaseRepository
 from helpers.db.models import BlacklistEntry, GuildModule, GuildRole, GuildSettings, ModCase
+from helpers.db.tempban_repo import TempBanRepository
 
 __all__ = [
     "BaseRepository",
@@ -18,4 +19,5 @@ __all__ = [
     "GuildSettings",
     "ModCase",
     "ModCaseRepository",
+    "TempBanRepository",
 ]

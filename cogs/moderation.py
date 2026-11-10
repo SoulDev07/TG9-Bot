@@ -2,33 +2,82 @@
 
 from __future__ import annotations
 
+import contextlib
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING
+
 import discord
-from discord.ext import commands
+import humanize
+from discord.ext import commands, tasks
 from discord.ext.commands import Context
 
 from helpers import checks, exceptions
 from helpers.embeds import (
+    EmbedColor,
     error_embed,
     info_embed,
     make_embed,
     modlog_case_embed,
     success_embed,
 )
+from helpers.logger import get_logger
+from helpers.time import parse_duration
 from services.moderation import (
     ban_member,
     edit_case_reason,
+    hackban_user,
     kick_member,
+    massban_users,
     purge_channel,
+    softban_member,
+    tempban_member,
+    unban_member,
     warn_member,
 )
 from views.cases import CaseHistoryPaginationView
+from views.confirm import ConfirmView
+
+if TYPE_CHECKING:
+    from bot import DiscordBot
+
+logger = get_logger()
 
 
 class Moderation(commands.Cog, name="moderation"):
     """Moderation Commands"""
 
-    def __init__(self, bot: commands.Bot):
+    def __init__(self, bot: DiscordBot):
         self.bot = bot
+
+    async def cog_load(self) -> None:
+        """Start the background tempban worker upon cog loading."""
+        if not self.check_tempbans_task.is_running():
+            self.check_tempbans_task.start()
+
+    async def cog_unload(self) -> None:
+        """Cancel background tempban worker when cog is unloaded."""
+        if self.check_tempbans_task.is_running():
+            self.check_tempbans_task.cancel()
+
+    @tasks.loop(seconds=30.0)
+    async def check_tempbans_task(self) -> None:
+        """Periodic background worker checking and unbanning expired tempbans."""
+        now = datetime.now(UTC)
+        expired = await self.bot.tempban_repo.get_expired_tempbans(now)
+        for guild_id, user_id, reason in expired:
+            guild = self.bot.get_guild(guild_id)
+            if not guild or not guild.me.guild_permissions.ban_members:
+                continue
+
+            with contextlib.suppress(discord.NotFound, discord.Forbidden, discord.HTTPException):
+                await guild.unban(discord.Object(id=user_id), reason=f"Tempban expired: {reason}")
+            await self.bot.tempban_repo.remove_tempban(guild_id, user_id)
+            logger.info("tempban_expired_unbanned", guild_id=guild_id, user_id=user_id)
+
+    @check_tempbans_task.before_loop
+    async def before_check_tempbans(self) -> None:
+        """Wait until bot cache is ready before checking expirations."""
+        await self.bot.wait_until_ready()
 
     async def cog_check(self, ctx: Context) -> bool:
         """Verify the moderation module is enabled for the invoking guild."""
@@ -144,6 +193,194 @@ class Moderation(commands.Cog, name="moderation"):
                 )
             )
             await ctx.send(embed=embed)
+
+    @commands.hybrid_command(
+        name="softban",
+        description="Ban and immediately unban a user to purge their recent messages",
+    )
+    @commands.guild_only()
+    @checks.mod_or_permissions(ban_members=True)
+    async def softban(
+        self,
+        ctx: Context,
+        member: discord.Member,
+        days: int = 1,
+        *,
+        reason: str = "Not specified",
+    ):
+        """Ban and immediately unban a user to purge recent messages without keeping them banned."""
+        clean_days = max(1, min(7, days))
+        case = await softban_member(ctx, member, days=clean_days, reason=reason)
+        embed = success_embed(
+            title="User Softbanned!",
+            description=(
+                f"**{member}** was softbanned by **{ctx.author}**! (Case #{case.case_number})"
+            ),
+            fields=[
+                ("Purged History", f"{clean_days} day(s)", True),
+                ("Reason", reason, False),
+            ],
+        )
+        await ctx.send(embed=embed)
+
+    @commands.hybrid_command(
+        name="tempban",
+        description="Temporarily ban a user for a duration (e.g., 1d, 12h, 30m)",
+    )
+    @commands.guild_only()
+    @checks.mod_or_permissions(ban_members=True)
+    async def tempban(
+        self,
+        ctx: Context,
+        member: discord.Member,
+        duration: str,
+        *,
+        reason: str = "Not specified",
+    ):
+        """Temporarily ban a user with automated expiration."""
+        delta = parse_duration(duration)
+        if not delta:
+            embed = error_embed(
+                description=f"Invalid duration format `{duration}`. Use e.g. `1d`, `12h`, `30m`."
+            )
+            await ctx.send(embed=embed)
+            return
+
+        case = await tempban_member(ctx, member, duration=delta, reason=reason)
+        embed = success_embed(
+            title="User Tempbanned!",
+            description=(
+                f"**{member}** was temporarily banned by **{ctx.author}**! "
+                f"(Case #{case.case_number})"
+            ),
+            fields=[
+                ("Duration", humanize.naturaldelta(delta), True),
+                ("Reason", reason, False),
+            ],
+        )
+        await ctx.send(embed=embed)
+
+    @commands.hybrid_command(
+        name="hackban",
+        aliases=["preban"],
+        description="Ban a user ID pre-emptively before they join the server",
+    )
+    @commands.guild_only()
+    @checks.mod_or_permissions(ban_members=True)
+    async def hackban(
+        self,
+        ctx: Context,
+        user_id: str,
+        *,
+        reason: str = "Not specified",
+    ):
+        """Pre-emptively ban a malicious user ID."""
+        clean_id = user_id.strip()
+        if not clean_id.isdigit():
+            embed = error_embed(description=f"Invalid user ID `{user_id}`. Must be numeric.")
+            await ctx.send(embed=embed)
+            return
+
+        uid = int(clean_id)
+        case = await hackban_user(ctx, uid, reason=reason)
+        embed = success_embed(
+            title="User Pre-banned!",
+            description=(
+                f"User ID `{uid}` was banned by **{ctx.author}**! (Case #{case.case_number})"
+            ),
+            fields=[("Reason", reason, False)],
+        )
+        await ctx.send(embed=embed)
+
+    @commands.hybrid_command(
+        name="unban",
+        description="Unban a user from the server with optional one-time reinvite link",
+    )
+    @commands.guild_only()
+    @checks.mod_or_permissions(ban_members=True)
+    async def unban(
+        self,
+        ctx: Context,
+        user: discord.User,
+        reinvite: bool = False,
+        *,
+        reason: str = "Not specified",
+    ):
+        """Unban a user with optional automatic reinvite link generation."""
+        case, invite_url = await unban_member(ctx, user, reinvite=reinvite, reason=reason)
+        fields: list[tuple[str, str, bool]] = [("Reason", reason, False)]
+        if reinvite:
+            status = f"[Invite Link]({invite_url})" if invite_url else "DM Failed / Unavailable"
+            fields.append(("Reinvite Link", status, True))
+
+        embed = success_embed(
+            title="User Unbanned!",
+            description=f"**{user}** was unbanned by **{ctx.author}**! (Case #{case.case_number})",
+            fields=fields,
+        )
+        await ctx.send(embed=embed)
+
+    @commands.hybrid_command(
+        name="massban",
+        description="Ban multiple user IDs in bulk with interactive confirmation",
+    )
+    @commands.guild_only()
+    @checks.admin_or_permissions(administrator=True)
+    async def massban(
+        self,
+        ctx: Context,
+        user_ids: str,
+        *,
+        reason: str = "Not specified",
+    ):
+        """Ban multiple user IDs with an interactive confirmation guard."""
+        raw_tokens = [tok.strip(",") for tok in user_ids.split()]
+        valid_uids: list[int] = [int(tok) for tok in raw_tokens if tok.isdigit()]
+
+        if not valid_uids:
+            embed = error_embed(description="No valid user IDs found in input.")
+            await ctx.send(embed=embed)
+            return
+
+        view = ConfirmView(
+            invoker_id=ctx.author.id,
+            confirm_label=f"Ban {len(valid_uids)} Users",
+        )
+        confirm_embed = make_embed(
+            title="Confirm Massban",
+            description=(
+                f"Are you sure you want to ban **{len(valid_uids)}** user(s)?\n"
+                f"**Reason:** {reason}\n\n"
+                "This action will ban each user from the server."
+            ),
+            color=EmbedColor.ERROR,
+        )
+        prompt_msg = await ctx.send(embed=confirm_embed, view=view)
+        await view.wait()
+
+        if not view.value:
+            cancel_embed = make_embed(
+                title="Massban Cancelled",
+                description="Massban operation was cancelled. No users were banned.",
+                color=0x808080,
+            )
+            await prompt_msg.edit(embed=cancel_embed, view=None)
+            return
+
+        banned, failed = await massban_users(ctx, valid_uids, reason=reason)
+        banned_preview = ", ".join(str(u) for u in banned[:15])
+        if len(banned) > 15:
+            banned_preview += f" ... (+{len(banned) - 15} more)"
+
+        result_embed = success_embed(
+            title="Massban Completed",
+            description=f"Successfully banned **{len(banned)}** users. Failed: **{len(failed)}**.",
+            fields=[
+                ("Banned IDs", f"`{banned_preview}`" if banned else "None", False),
+                ("Reason", reason, False),
+            ],
+        )
+        await prompt_msg.edit(embed=result_embed, view=None)
 
     @commands.hybrid_command(name="purge", description="Delete a number of messages")
     @commands.guild_only()
@@ -379,6 +616,6 @@ class Moderation(commands.Cog, name="moderation"):
         await ctx.send(embed=embed, view=view if view.total_pages > 1 else None)
 
 
-async def setup(bot: commands.Bot):
+async def setup(bot: DiscordBot):
     """Add Moderation commands to cogs"""
     await bot.add_cog(Moderation(bot))
