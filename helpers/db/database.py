@@ -83,6 +83,42 @@ CREATE TABLE IF NOT EXISTS temp_bans (
 );
 
 CREATE INDEX IF NOT EXISTS idx_temp_bans_unban_at ON temp_bans(unban_at);
+
+CREATE TABLE IF NOT EXISTS warning_settings (
+    guild_id INTEGER PRIMARY KEY,
+    decay_days INTEGER NOT NULL DEFAULT 30
+);
+
+CREATE TABLE IF NOT EXISTS warning_reasons (
+    guild_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    points INTEGER NOT NULL DEFAULT 1,
+    description TEXT,
+    PRIMARY KEY (guild_id, name)
+);
+
+CREATE TABLE IF NOT EXISTS warning_actions (
+    guild_id INTEGER NOT NULL,
+    points INTEGER NOT NULL,
+    action TEXT NOT NULL,
+    duration_seconds INTEGER,
+    PRIMARY KEY (guild_id, points)
+);
+
+CREATE TABLE IF NOT EXISTS warnings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    guild_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    moderator_id INTEGER NOT NULL,
+    reason TEXT NOT NULL,
+    points INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    expires_at TEXT,
+    case_number INTEGER
+);
+
+CREATE INDEX IF NOT EXISTS idx_warnings_guild_user ON warnings(guild_id, user_id);
+CREATE INDEX IF NOT EXISTS idx_warnings_expires_at ON warnings(expires_at);
 """
 
 

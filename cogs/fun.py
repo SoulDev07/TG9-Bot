@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import contextlib
 import random
 
 import discord
@@ -11,6 +10,7 @@ from discord.ext.commands import Context
 
 from helpers import exceptions
 from helpers.embeds import EmbedColor, make_embed
+from views.games import RockPaperScissorsView
 
 EMBED_COLORS = {
     "default": EmbedColor.WARNING,
@@ -64,60 +64,22 @@ class Fun(commands.Cog, name="fun"):
         )
         await ctx.send(embed=result_embed)
 
-    @commands.hybrid_command(name="rps", description="Play Rock, Paper, Scissors")
+    @commands.hybrid_command(
+        name="rps",
+        aliases=["rockpaperscissors"],
+        description="Play interactive Rock, Paper, Scissors with buttons",
+    )
     async def rock_paper_scissors(self, ctx: Context):
-        """Play Rock, Paper, Scissors"""
-        reactions = {"🪨": 0, "🧻": 1, "✂": 2}
-        embed = self.get_embed(ctx, "Please Choose")
-        choose_msg = await ctx.send(embed=embed)
-
-        for emoji in reactions:
-            await choose_msg.add_reaction(emoji)
-
-        def check(reaction, user):
-            return user == ctx.author and str(reaction) in reactions
-
-        try:
-            reaction, user = await self.bot.wait_for("reaction_add", timeout=10, check=check)
-            if not user:
-                return
-
-            user_choice_emote = reaction.emoji
-            user_choice_index = reactions[user_choice_emote]
-
-            bot_choice_emote = random.choice(list(reactions.keys()))
-            bot_choice_index = reactions[bot_choice_emote]
-
-            result_embed = self.get_embed(ctx, "", color=EMBED_COLORS["draw"])
-            await choose_msg.clear_reactions()
-
-            if user_choice_index == bot_choice_index:
-                result_embed.description = f"**It's a draw!**\nWe both choose {user_choice_emote}."
-            elif (user_choice_index - bot_choice_index) % 3 == 1:
-                result_embed.description = (
-                    f"**You win!**\nYour choice was {user_choice_emote}\n"
-                    f"My choice was {bot_choice_emote}."
-                )
-                result_embed.colour = EMBED_COLORS["win"]
-            else:
-                result_embed.description = (
-                    f"**I win!**\nYour choice was {user_choice_emote}\n"
-                    f"My choice was {bot_choice_emote}."
-                )
-                result_embed.colour = EMBED_COLORS["lose"]
-                await choose_msg.add_reaction("🇱")
-
-            await choose_msg.edit(embed=result_embed)
-
-        except TimeoutError:
-            with contextlib.suppress(discord.HTTPException):
-                await choose_msg.clear_reactions()
-            timeout_embed = self.get_embed(
-                ctx,
-                title="Too late",
-                color=EMBED_COLORS["lose"],
-            )
-            await choose_msg.edit(embed=timeout_embed)
+        """Play interactive Rock, Paper, Scissors with buttons."""
+        view = RockPaperScissorsView(invoker=ctx.author)
+        embed = self.get_embed(
+            ctx,
+            title="Rock, Paper, Scissors!",
+            desc="Choose your move below by clicking a button:",
+            color=EMBED_COLORS["default"],
+        )
+        message = await ctx.send(embed=embed, view=view)
+        view.message = message
 
 
 async def setup(bot: commands.Bot):

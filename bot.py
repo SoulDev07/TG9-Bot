@@ -24,6 +24,7 @@ from helpers.db import (
     GuildRepository,
     ModCaseRepository,
     TempBanRepository,
+    WarningRepository,
 )
 from helpers.embeds import error_embed, warning_embed
 from helpers.logger import get_logger, setup_logging
@@ -55,6 +56,7 @@ class DiscordBot(commands.Bot):
         self.blacklist_repo = BlacklistRepository(self.db)
         self.mod_case_repo = ModCaseRepository(self.db)
         self.tempban_repo = TempBanRepository(self.db)
+        self.warning_repo = WarningRepository(self.db)
 
     async def load_cogs(self) -> None:
         """Load all extension modules from the cogs directory."""

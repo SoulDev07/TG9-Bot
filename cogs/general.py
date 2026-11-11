@@ -13,6 +13,7 @@ from discord.ext import commands
 from discord.ext.commands import Context
 
 from helpers.embeds import error_embed, make_embed, success_embed
+from views.poll import PollView
 
 BOT_VERSION = "2.0.0"
 
@@ -164,19 +165,18 @@ class General(commands.Cog, name="general"):
         except discord.Forbidden:
             await ctx.send(embed=embed)
 
-    @commands.hybrid_command(name="poll", description="Generate an interactive poll")
+    @commands.hybrid_command(
+        name="poll",
+        description="Generate an interactive button-based voting poll",
+    )
+    @discord.app_commands.describe(question="The question or topic for members to vote on")
     @commands.guild_only()
-    async def poll(self, ctx: Context, *, title: str):
-        """Create a poll where members can vote."""
-        embed = success_embed(
-            title="A new poll has been created!",
-            description=f"{title}",
-            footer=f"Poll created by: {ctx.author} • React to vote!",
-        )
-        embed_message = await ctx.send(embed=embed)
-        await embed_message.add_reaction("👍")
-        await embed_message.add_reaction("👎")
-        await embed_message.add_reaction("🤷")
+    async def poll(self, ctx: Context, *, question: str):
+        """Create an interactive button-based poll with live vote tallies."""
+        view = PollView(question=question, creator=ctx.author)
+        embed = view.build_embed()
+        message = await ctx.send(embed=embed, view=view)
+        view.message = message
 
 
 async def setup(bot: commands.Bot):

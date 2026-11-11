@@ -1,11 +1,18 @@
 """Typed application configuration models using Pydantic Settings."""
 
+from pathlib import Path
+
 from pydantic import Field, SecretStr
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import (
+    BaseSettings,
+    JsonConfigSettingsSource,
+    PydanticBaseSettingsSource,
+    SettingsConfigDict,
+)
 
 
 class BotConfig(BaseSettings):
-    """Validated bot configuration loaded from environment variables and .env."""
+    """Validated bot configuration loaded from environment variables, .env, and config.json."""
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -28,6 +35,23 @@ class BotConfig(BaseSettings):
     log_level: str = "INFO"
     json_logs: bool = False
     sentry_dsn: str | None = None
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        """Layer configuration: init args > env vars > .env > config.json."""
+        config_path = Path("config.json")
+        sources: list[PydanticBaseSettingsSource] = [init_settings, env_settings, dotenv_settings]
+        if config_path.exists():
+            sources.append(JsonConfigSettingsSource(settings_cls, json_file=config_path))
+        sources.append(file_secret_settings)
+        return tuple(sources)
 
     def is_owner(self, user_id: int) -> bool:
         """Check if a given user ID is an authorized bot owner."""

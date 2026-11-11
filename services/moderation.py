@@ -18,7 +18,7 @@ from helpers.hierarchy import validate_hierarchy
 from helpers.logger import get_logger
 
 if TYPE_CHECKING:
-    from helpers.db.models import ModCase
+    from helpers.db.models import ModCase, WarningAction, WarningRecord
 
 logger = get_logger()
 
@@ -118,15 +118,105 @@ async def edit_case_reason(
 async def warn_member(
     ctx: Context,
     member: discord.Member,
-    reason: str,
-) -> ModCase:
-    """Validate hierarchy, notify member via DM, and record the case."""
+    reason: str = "Not specified",
+    points: int | None = None,
+) -> tuple[ModCase, WarningRecord, int, WarningAction | None]:
+    """Validate hierarchy, record warning points, trigger automated escalations, and audit log."""
     validate_target(ctx, member)
+
+    # Resolve points from preset reasons if not explicitly specified
+    if points is None:
+        matched_reason = await ctx.bot.warning_repo.get_reason(ctx.guild.id, reason)
+        resolved_points = matched_reason.points if matched_reason else 1
+    else:
+        resolved_points = max(1, points)
+
+    now = datetime.now(UTC)
+    settings = await ctx.bot.warning_repo.get_settings(ctx.guild.id)
+    expires_at = now + timedelta(days=settings.decay_days) if settings.decay_days > 0 else None
+
+    # Fetch pre-warning accumulated points
+    prev_points = await ctx.bot.warning_repo.get_active_points(ctx.guild.id, member.id, now=now)
+    new_points = prev_points + resolved_points
+
+    case_reason = f"{reason} (+{resolved_points} pt{'s' if resolved_points != 1 else ''})"
+    case = await record_case(ctx, action="warn", target=member, reason=case_reason)
+
+    warning_record = await ctx.bot.warning_repo.create_warning(
+        guild_id=ctx.guild.id,
+        user_id=member.id,
+        moderator_id=ctx.author.id,
+        reason=reason,
+        points=resolved_points,
+        expires_at=expires_at,
+        case_number=case.case_number,
+    )
+
+    # Evaluate escalation rules
+    actions = await ctx.bot.warning_repo.get_actions(ctx.guild.id)
+    triggered_actions = [action for action in actions if prev_points < action.points <= new_points]
+
+    escalated_action: WarningAction | None = None
+    if triggered_actions:
+        escalated_action = max(triggered_actions, key=lambda a: a.points)
+        escalation_reason = f"Automated warning escalation ({new_points} points reached)"
+
+        match escalated_action.action:
+            case "timeout":
+                duration_sec = escalated_action.duration_seconds or 3600
+                timeout_delta = timedelta(seconds=duration_sec)
+                with contextlib.suppress(discord.Forbidden, discord.HTTPException):
+                    await member.timeout(timeout_delta, reason=escalation_reason)
+                readable_duration = humanize.precisedelta(timeout_delta)
+                await record_case(
+                    ctx,
+                    action="timeout",
+                    target=member,
+                    reason=f"{escalation_reason}: {readable_duration}",
+                )
+            case "kick":
+                with contextlib.suppress(discord.Forbidden, discord.HTTPException):
+                    await member.kick(reason=escalation_reason)
+                await record_case(ctx, action="kick", target=member, reason=escalation_reason)
+            case "ban":
+                with contextlib.suppress(discord.Forbidden, discord.HTTPException):
+                    await member.ban(reason=escalation_reason, delete_message_days=0)
+                await record_case(ctx, action="ban", target=member, reason=escalation_reason)
+            case "softban":
+                with contextlib.suppress(discord.Forbidden, discord.HTTPException):
+                    await member.ban(reason=escalation_reason, delete_message_days=1)
+                    await ctx.guild.unban(
+                        discord.Object(id=member.id),
+                        reason="Automated softban purge",
+                    )
+                await record_case(ctx, action="softban", target=member, reason=escalation_reason)
+
+    # Direct message user regarding warning and escalation
+    escalation_notice = ""
+    if escalated_action:
+        if escalated_action.action == "timeout":
+            dur = humanize.precisedelta(
+                timedelta(seconds=escalated_action.duration_seconds or 3600)
+            )
+            escalation_notice = (
+                f"\nAn automated **{dur} timeout** was applied as you reached "
+                f"{new_points} warning points."
+            )
+        else:
+            escalation_notice = (
+                f"\nAn automated **{escalated_action.action.upper()}** was applied as you "
+                f"reached {new_points} warning points."
+            )
+
     with contextlib.suppress(discord.Forbidden, discord.HTTPException):
         await member.send(
-            f"You were warned in **{ctx.guild.name}** by **{ctx.author}**!\nReason: {reason}"
+            f"You received a warning in **{ctx.guild.name}** by **{ctx.author}**!\n"
+            f"Reason: {reason}\n"
+            f"Points: +{resolved_points} (Total active points: {new_points})"
+            f"{escalation_notice}"
         )
-    return await record_case(ctx, action="warn", target=member, reason=reason)
+
+    return case, warning_record, new_points, escalated_action
 
 
 async def kick_member(

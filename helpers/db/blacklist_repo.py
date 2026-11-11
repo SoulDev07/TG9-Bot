@@ -98,6 +98,28 @@ class BlacklistRepository(BaseRepository):
             self._cache.discard(user_id)
         return removed
 
+    async def get(self, user_id: int) -> BlacklistEntry | None:
+        """Fetch a specific blacklist entry by user ID."""
+        async with self.db.read() as conn:
+            cursor = await conn.execute(
+                """
+                SELECT user_id, reason, created_at, created_by
+                FROM blacklist
+                WHERE user_id = ?
+                """,
+                (user_id,),
+            )
+            row = await cursor.fetchone()
+            if not row:
+                return None
+
+            return BlacklistEntry(
+                user_id=row["user_id"],
+                reason=row["reason"],
+                created_at=datetime.fromisoformat(row["created_at"]),
+                created_by=row["created_by"],
+            )
+
     async def get_all(self) -> list[BlacklistEntry]:
         """Fetch all blacklisted user records."""
         async with self.db.read() as conn:

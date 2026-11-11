@@ -84,3 +84,57 @@ class ModCase(BaseModel):
     reason: str = "Not specified"
     message_id: int | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class WarningReason(BaseModel):
+    """Configured warning reason template with point weight."""
+
+    model_config = ConfigDict(frozen=True, extra="ignore")
+
+    guild_id: int
+    name: str
+    points: int = 1
+    description: str | None = None
+
+
+class WarningAction(BaseModel):
+    """Configured escalation rule threshold for accumulated warning points."""
+
+    model_config = ConfigDict(frozen=True, extra="ignore")
+
+    guild_id: int
+    points: int
+    action: str  # "timeout", "kick", "ban", "softban"
+    duration_seconds: int | None = None
+
+
+class WarningSettings(BaseModel):
+    """Guild settings for warning points decay and policy."""
+
+    model_config = ConfigDict(frozen=True, extra="ignore")
+
+    guild_id: int
+    decay_days: int = 30
+
+
+class WarningRecord(BaseModel):
+    """Individual infraction warning assigned to a guild member."""
+
+    model_config = ConfigDict(frozen=True, extra="ignore")
+
+    id: int | None = None
+    guild_id: int
+    user_id: int
+    moderator_id: int
+    reason: str
+    points: int = 1
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    expires_at: datetime | None = None
+    case_number: int | None = None
+
+    @property
+    def is_expired(self) -> bool:
+        """Determine whether the warning points have decayed."""
+        if self.expires_at is None:
+            return False
+        return datetime.now(UTC) >= self.expires_at
