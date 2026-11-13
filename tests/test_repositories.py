@@ -7,12 +7,14 @@ from pathlib import Path
 
 import pytest
 
-from helpers.db.blacklist_repo import BlacklistRepository
-from helpers.db.database import DatabaseManager
-from helpers.db.guild_repo import GuildRepository
-from helpers.db.modcase_repo import ModCaseRepository
-from helpers.db.tempban_repo import TempBanRepository
-from helpers.db.warning_repo import WarningRepository
+from core.db import (
+    BlacklistRepository,
+    DatabaseManager,
+    GuildRepository,
+    ModCaseRepository,
+    TempBanRepository,
+    WarningRepository,
+)
 
 
 @pytest.fixture

@@ -7,13 +7,13 @@ from typing import TYPE_CHECKING
 
 from aiocache import SimpleMemoryCache
 
-from helpers.db.base import BaseRepository
-from helpers.db.models import GuildModuleFlag, GuildSettings
+from core.db.base import BaseRepository
+from core.db.models import GuildModuleFlag, GuildSettings
 
 if TYPE_CHECKING:
     import discord
 
-    from helpers.db.database import DatabaseManager
+    from core.db.database import DatabaseManager
 
 
 class GuildRepository(BaseRepository):

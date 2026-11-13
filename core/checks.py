@@ -7,14 +7,14 @@ from typing import TYPE_CHECKING
 
 from discord.ext.commands import Context, check
 
-from helpers.config import get_config
-from helpers.exceptions import (
+from core.config import get_config
+from core.exceptions import (
     MissingRoleOrPermission,
     ModuleDisabled,
     UserNotGuildOwner,
     UserNotOwner,
 )
-from helpers.hierarchy import validate_hierarchy
+from core.hierarchy import validate_hierarchy
 
 if TYPE_CHECKING:
     import discord

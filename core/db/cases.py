@@ -5,11 +5,11 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from helpers.db.base import BaseRepository
-from helpers.db.models import ModCase
+from core.db.base import BaseRepository
+from core.db.models import ModCase
 
 if TYPE_CHECKING:
-    from helpers.db.database import DatabaseManager
+    from core.db.database import DatabaseManager
 
 
 class ModCaseRepository(BaseRepository):

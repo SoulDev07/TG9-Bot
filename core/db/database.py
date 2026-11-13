@@ -10,7 +10,7 @@ from pathlib import Path
 
 import aiosqlite
 
-from helpers.logger import get_logger
+from core.logger import get_logger
 
 logger = get_logger()
 

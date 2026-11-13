@@ -14,11 +14,9 @@ import discord
 from discord.ext import commands, tasks
 from discord.ext.commands import Context
 
-from core.prefix import dynamic_prefix_resolver
-from core.tree import BotCommandTree
-from helpers import exceptions
-from helpers.config import BotConfig, load_config
-from helpers.db import (
+from core import exceptions
+from core.config import BotConfig, load_config
+from core.db import (
     BlacklistRepository,
     DatabaseManager,
     GuildRepository,
@@ -26,8 +24,10 @@ from helpers.db import (
     TempBanRepository,
     WarningRepository,
 )
-from helpers.embeds import error_embed, warning_embed
-from helpers.logger import get_logger, setup_logging
+from core.embeds import error_embed, warning_embed
+from core.logger import get_logger, setup_logging
+from core.prefix import dynamic_prefix_resolver
+from core.tree import BotCommandTree
 
 if TYPE_CHECKING:
     from discord import app_commands
@@ -126,7 +126,7 @@ class DiscordBot(commands.Bot):
         """Provision default settings when joining a new server."""
         settings = await self.guild_repo.get_or_create(
             guild.id,
-            default_prefix=self.config.bot_prefix,
+            default_prefix=self.config.prefix,
         )
         logger.info(
             "guild_joined",

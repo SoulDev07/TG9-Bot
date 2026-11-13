@@ -25,8 +25,8 @@ class BotConfig(BaseSettings):
         validation_alias="TOKEN",
         description="Discord bot application token",
     )
-    bot_prefix: str = "Tg9 "
-    bot_invite_link: str = ""
+    prefix: str = "Tg9 "
+    invite_link: str = ""
     owners: set[int] = Field(default_factory=set)
     test_guild: int | None = None
     guild_id: int | None = None

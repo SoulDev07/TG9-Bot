@@ -6,9 +6,9 @@ import discord
 from discord.ext import commands
 from discord.ext.commands import Context
 
-from helpers import checks
-from helpers.embeds import error_embed, info_embed, make_embed, success_embed, warning_embed
-from helpers.logger import get_logger
+from core import checks
+from core.embeds import error_embed, info_embed, make_embed, success_embed, warning_embed
+from core.logger import get_logger
 
 logger = get_logger()
 
@@ -212,7 +212,7 @@ class Owner(commands.Cog, name="owner"):
             )
             await ctx.send(embed=embed)
 
-    @commands.command(name="cogs", aliases=["extensions", "modules"])
+    @commands.command(name="cogs")
     @checks.is_owner()
     async def list_cogs(self, ctx: Context):
         """List all currently loaded cogs and extensions."""
@@ -240,7 +240,7 @@ class Owner(commands.Cog, name="owner"):
         )
         await ctx.send(embed=embed)
 
-    @commands.command(name="shutdown", aliases=["sd", "sleep"])
+    @commands.command(name="shutdown")
     @checks.is_owner()
     async def shutdown(self, ctx: Context):
         """Terminate the bot process safely."""

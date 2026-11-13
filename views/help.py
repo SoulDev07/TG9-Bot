@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 import discord
 
-from helpers.embeds import EmbedColor, make_embed
+from core.embeds import EmbedColor, make_embed
 
 if TYPE_CHECKING:
     from bot import DiscordBot
@@ -30,8 +30,14 @@ CATEGORIES: dict[str, dict[str, str]] = {
             "• `/softban <member> [reason]`: Ban and immediately unban to clear chat\n"
             "• `/hackban <user_id> [reason]`: Pre-ban a user before they join\n"
             "• `/unban <user_id> [--reinvite]`: Revoke ban with optional DM invite\n"
-            "• `/massban <user_ids...>`: Bulk ban multiple IDs with confirmation\n"
-            "• `/purge <amount>`: Bulk delete recent channel messages\n\n"
+            "• `/massban <user_ids...>`: Bulk ban multiple IDs with confirmation\n\n"
+            "**Cleanup Suite:**\n"
+            "• `/purge [amount]`: Bulk delete recent messages\n"
+            "• `/purge user <member> [amount]`: Clean messages from a specific member\n"
+            "• `/purge bot [amount]`: Clean bot commands and bot responses\n"
+            "• `/purge contains <text>`: Purge messages matching keywords\n"
+            "• `/purge embeds | files`: Purge link previews or image attachments\n"
+            "• `/purge after <message_id>`: Purge messages sent after a target ID\n\n"
             "**Case Auditing:**\n"
             "• `/case view <id>`: Inspect historical case and moderator\n"
             "• `/case edit <id> <reason>`: Live-edit database and Discord audit log embed\n"

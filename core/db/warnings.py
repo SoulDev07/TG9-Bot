@@ -7,11 +7,11 @@ from typing import TYPE_CHECKING
 
 from aiocache import SimpleMemoryCache
 
-from helpers.db.base import BaseRepository
-from helpers.db.models import WarningAction, WarningReason, WarningRecord, WarningSettings
+from core.db.base import BaseRepository
+from core.db.models import WarningAction, WarningReason, WarningRecord, WarningSettings
 
 if TYPE_CHECKING:
-    from helpers.db.database import DatabaseManager
+    from core.db.database import DatabaseManager
 
 DEFAULT_ACTIONS: list[tuple[int, str, int | None]] = [
     (3, "timeout", 3600),

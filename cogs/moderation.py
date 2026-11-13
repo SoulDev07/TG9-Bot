@@ -1,48 +1,36 @@
-"""Stores moderation commands of Bot"""
+"""Core moderation enforcement toolkit and role authority configuration."""
 
 from __future__ import annotations
 
 import contextlib
-from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING, Literal
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 
 import discord
 import humanize
 from discord.ext import commands, tasks
 from discord.ext.commands import Context
 
-from helpers import checks, exceptions
-from helpers.embeds import (
+from core import checks, exceptions
+from core.embeds import (
     EmbedColor,
     error_embed,
     info_embed,
     make_embed,
-    modlog_case_embed,
     success_embed,
 )
-from helpers.logger import get_logger
-from helpers.time import parse_duration
+from core.logger import get_logger
+from core.time import parse_duration
 from services.moderation import (
     ban_member,
-    edit_case_reason,
     hackban_user,
     kick_member,
     massban_users,
-    purge_bot_messages,
-    purge_channel,
-    purge_containing_text,
-    purge_embed_messages,
-    purge_file_messages,
-    purge_messages_after,
-    purge_user_messages,
     softban_member,
     tempban_member,
     unban_member,
-    warn_member,
 )
-from views.cases import CaseHistoryPaginationView
 from views.confirm import ConfirmView
-from views.warnings import WarningHistoryPaginationView
 
 if TYPE_CHECKING:
     from bot import DiscordBot
@@ -50,59 +38,37 @@ if TYPE_CHECKING:
 logger = get_logger()
 
 
-async def warning_reason_autocomplete(
-    interaction: discord.Interaction,
-    current: str,
-) -> list[discord.app_commands.Choice[str]]:
-    """Suggest configured warning reason templates dynamically."""
-    if not interaction.guild:
-        return []
-    reasons = await interaction.client.warning_repo.get_reasons(interaction.guild.id)
-    choices = [
-        discord.app_commands.Choice(
-            name=f"{r.name.title()} ({r.points} pt{'s' if r.points != 1 else ''})",
-            value=r.name,
-        )
-        for r in reasons
-        if current.lower() in r.name.lower()
-    ]
-    return choices[:25]
-
-
 class Moderation(commands.Cog, name="moderation"):
-    """Moderation Commands"""
+    """Core Moderation Commands"""
 
     def __init__(self, bot: DiscordBot):
         self.bot = bot
 
     async def cog_load(self) -> None:
-        """Start the background tempban worker upon cog loading."""
-        if not self.check_tempbans_task.is_running():
-            self.check_tempbans_task.start()
+        """Start background workers when cog is loaded into the bot."""
+        self.tempban_unban_worker.start()
 
     async def cog_unload(self) -> None:
-        """Cancel background tempban worker when cog is unloaded."""
-        if self.check_tempbans_task.is_running():
-            self.check_tempbans_task.cancel()
+        """Cancel background tasks when the cog is unloaded."""
+        self.tempban_unban_worker.cancel()
 
     @tasks.loop(seconds=30.0)
-    async def check_tempbans_task(self) -> None:
+    async def tempban_unban_worker(self) -> None:
         """Periodic background worker checking and unbanning expired tempbans."""
         now = datetime.now(UTC)
         expired = await self.bot.tempban_repo.get_expired_tempbans(now)
         for guild_id, user_id, reason in expired:
             guild = self.bot.get_guild(guild_id)
-            if not guild or not guild.me.guild_permissions.ban_members:
+            if not guild:
                 continue
-
             with contextlib.suppress(discord.NotFound, discord.Forbidden, discord.HTTPException):
                 await guild.unban(discord.Object(id=user_id), reason=f"Tempban expired: {reason}")
             await self.bot.tempban_repo.remove_tempban(guild_id, user_id)
             logger.info("tempban_expired_unbanned", guild_id=guild_id, user_id=user_id)
 
-    @check_tempbans_task.before_loop
-    async def before_check_tempbans(self) -> None:
-        """Wait until bot cache is ready before checking expirations."""
+    @tempban_unban_worker.before_loop
+    async def before_tempban_worker(self) -> None:
+        """Wait until bot cache is ready before executing background unbans."""
         await self.bot.wait_until_ready()
 
     async def cog_check(self, ctx: Context) -> bool:
@@ -118,7 +84,6 @@ class Moderation(commands.Cog, name="moderation"):
 
     @commands.hybrid_command(
         name="say",
-        aliases=["echo"],
         description="The bot will say anything you want",
     )
     @commands.guild_only()
@@ -136,63 +101,6 @@ class Moderation(commands.Cog, name="moderation"):
     async def embed(self, ctx: Context, *, sentence: str):
         """The bot will say anything you want in embeds."""
         embed = success_embed(description=sentence)
-        await ctx.send(embed=embed)
-
-    @commands.hybrid_command(
-        name="warn",
-        description="Warns a user with optional points and automated threshold escalation",
-    )
-    @discord.app_commands.describe(
-        member="The member to issue a warning to",
-        reason="Reason for the warning or preset category name",
-        points="Custom point weight (defaults to preset value or 1)",
-    )
-    @discord.app_commands.autocomplete(reason=warning_reason_autocomplete)
-    @commands.guild_only()
-    @checks.mod_or_permissions(manage_messages=True)
-    async def warn(
-        self,
-        ctx: Context,
-        member: discord.Member,
-        points: int | None = None,
-        *,
-        reason: str = "Not specified",
-    ):
-        """Warns a member with points, applying automated threshold escalations."""
-        case, warning_record, new_points, escalated_action = await warn_member(
-            ctx, member, reason=reason, points=points
-        )
-
-        fields: list[tuple[str, str, bool]] = [
-            ("Reason", reason, False),
-            ("Points", f"+{warning_record.points} (Total Active: {new_points})", True),
-        ]
-        if warning_record.expires_at:
-            exp_ts = int(warning_record.expires_at.timestamp())
-            fields.append(("Expires", f"<t:{exp_ts}:R>", True))
-        else:
-            fields.append(("Expires", "Never", True))
-
-        if escalated_action:
-            action_name = escalated_action.action.upper()
-            if escalated_action.action == "timeout":
-                dur = humanize.precisedelta(
-                    timedelta(seconds=escalated_action.duration_seconds or 3600)
-                )
-                action_name += f" ({dur})"
-            fields.append(
-                (
-                    "⚠️ Automated Escalation",
-                    f"Threshold reached ({escalated_action.points} pts): **{action_name}**",
-                    False,
-                )
-            )
-
-        embed = success_embed(
-            title="User Warned!",
-            description=f"**{member}** was warned by **{ctx.author}**! (Case #{case.case_number})",
-            fields=fields,
-        )
         await ctx.send(embed=embed)
 
     @commands.hybrid_command(name="kick", description="Kick a user out of the server")
@@ -216,16 +124,19 @@ class Moderation(commands.Cog, name="moderation"):
                 fields=[("Reason", reason, False)],
             )
             await ctx.send(embed=embed)
+        except exceptions.HierarchyError as e:
+            embed = error_embed(title="Hierarchy Error", description=str(e))
+            await ctx.send(embed=embed)
         except discord.Forbidden:
             embed = error_embed(
                 description=(
                     f"An error occurred while trying to kick {member.mention}. "
-                    "Make sure my role is placed higher than the target user's role."
+                    "Make sure my role is higher than the member you want to kick."
                 )
             )
             await ctx.send(embed=embed)
 
-    @commands.hybrid_command(name="ban", description="Ban a user from the server")
+    @commands.hybrid_command(name="ban", description="Bans a user from the server")
     @commands.guild_only()
     @checks.mod_or_permissions(ban_members=True)
     async def ban(
@@ -235,7 +146,7 @@ class Moderation(commands.Cog, name="moderation"):
         *,
         reason: str = "Not specified",
     ):
-        """Ban a user from the server."""
+        """Bans a user from the server."""
         try:
             case = await ban_member(ctx, member, reason)
             embed = success_embed(
@@ -246,18 +157,26 @@ class Moderation(commands.Cog, name="moderation"):
                 fields=[("Reason", reason, False)],
             )
             await ctx.send(embed=embed)
+        except exceptions.HierarchyError as e:
+            embed = error_embed(title="Hierarchy Error", description=str(e))
+            await ctx.send(embed=embed)
         except discord.Forbidden:
             embed = error_embed(
                 description=(
                     f"An error occurred while trying to ban {member.mention}. "
-                    "Make sure my role is placed higher than the target user's role."
+                    "Make sure my role is higher than the member you want to ban."
                 )
             )
             await ctx.send(embed=embed)
 
     @commands.hybrid_command(
         name="softban",
-        description="Ban and immediately unban a user to purge their recent messages",
+        description="Bans and immediately unbans a user to purge recent chat messages",
+    )
+    @discord.app_commands.describe(
+        member="The member to softban",
+        days="Days of message history to purge (1 to 7, default: 1)",
+        reason="Reason for the softban",
     )
     @commands.guild_only()
     @checks.mod_or_permissions(ban_members=True)
@@ -269,24 +188,31 @@ class Moderation(commands.Cog, name="moderation"):
         *,
         reason: str = "Not specified",
     ):
-        """Ban and immediately unban a user to purge recent messages without keeping them banned."""
-        clean_days = max(1, min(7, days))
-        case = await softban_member(ctx, member, days=clean_days, reason=reason)
+        """Bans and immediately unbans a user to purge their recent chat messages."""
+        if not 1 <= days <= 7:
+            await ctx.send(embed=error_embed(description="Days to purge must be between 1 and 7."))
+            return
+
+        case = await softban_member(ctx, member, reason=reason, days=days)
+        days_label = f"{days} day{'s' if days > 1 else ''}"
         embed = success_embed(
-            title="User Softbanned!",
+            title="User Softbanned",
             description=(
-                f"**{member}** was softbanned by **{ctx.author}**! (Case #{case.case_number})"
+                f"**{member}** was softbanned by **{ctx.author}**!\n"
+                f"(Purged {days_label} of messages • Case #{case.case_number})"
             ),
-            fields=[
-                ("Purged History", f"{clean_days} day(s)", True),
-                ("Reason", reason, False),
-            ],
+            fields=[("Reason", reason, False)],
         )
         await ctx.send(embed=embed)
 
     @commands.hybrid_command(
         name="tempban",
-        description="Temporarily ban a user for a duration (e.g., 1d, 12h, 30m)",
+        description="Temporarily ban a user with automated expiration unban",
+    )
+    @discord.app_commands.describe(
+        member="The member to temporarily ban",
+        duration="Duration of the ban (e.g., 1h, 1d, 3d, 1w)",
+        reason="Reason for the tempban",
     )
     @commands.guild_only()
     @checks.mod_or_permissions(ban_members=True)
@@ -298,33 +224,85 @@ class Moderation(commands.Cog, name="moderation"):
         *,
         reason: str = "Not specified",
     ):
-        """Temporarily ban a user with automated expiration."""
+        """Temporarily bans a member with automated unban after expiration."""
         delta = parse_duration(duration)
         if not delta:
-            embed = error_embed(
-                description=f"Invalid duration format `{duration}`. Use e.g. `1d`, `12h`, `30m`."
+            await ctx.send(
+                embed=error_embed(
+                    description=(
+                        f"Invalid duration format: `{duration}`. "
+                        "Please use formats like `30m`, `2h`, `1d`, `7d`, or `2w`."
+                    )
+                )
             )
-            await ctx.send(embed=embed)
             return
 
-        case = await tempban_member(ctx, member, duration=delta, reason=reason)
+        case, unban_at = await tempban_member(ctx, member, duration=delta, reason=reason)
+        unban_ts = int(unban_at.timestamp())
         embed = success_embed(
-            title="User Tempbanned!",
+            title="User Temporarily Banned",
             description=(
-                f"**{member}** was temporarily banned by **{ctx.author}**! "
-                f"(Case #{case.case_number})"
+                f"**{member}** was tempbanned by **{ctx.author}**! (Case #{case.case_number})"
             ),
             fields=[
-                ("Duration", humanize.naturaldelta(delta), True),
+                ("Duration", humanize.precisedelta(delta), True),
+                ("Expires", f"<t:{unban_ts}:R> (<t:{unban_ts}:F>)", True),
                 ("Reason", reason, False),
             ],
         )
         await ctx.send(embed=embed)
 
     @commands.hybrid_command(
+        name="unban",
+        description="Unban a user by ID with optional one-time reinvite link",
+    )
+    @discord.app_commands.describe(
+        user_id="The Discord user ID to unban",
+        reinvite="Whether to create and DM a one-time server invite link",
+        reason="Reason for unbanning",
+    )
+    @commands.guild_only()
+    @checks.mod_or_permissions(ban_members=True)
+    async def unban(
+        self,
+        ctx: Context,
+        user_id: str,
+        reinvite: bool = False,
+        *,
+        reason: str = "Not specified",
+    ):
+        """Unbans a user by their user ID with optional invite link delivery."""
+        clean_id = user_id.strip()
+        if not clean_id.isdigit():
+            await ctx.send(embed=error_embed(description="Invalid user ID provided."))
+            return
+
+        target_id = int(clean_id)
+        user, reinvited, case = await unban_member(
+            ctx, user_id=target_id, reinvite=reinvite, reason=reason
+        )
+
+        display_name = f"**{user.name}** (`{user.id}`)" if user else f"User ID `{target_id}`"
+        fields: list[tuple[str, str, bool]] = [("Reason", reason, False)]
+        if reinvite:
+            status_text = "Delivered via DM" if reinvited else "Failed (DMs disabled)"
+            fields.append(("One-Time Reinvite", status_text, True))
+
+        case_info = f" (Case #{case.case_number})" if case else ""
+        embed = success_embed(
+            title="User Unbanned",
+            description=f"{display_name} was unbanned by **{ctx.author}**!{case_info}",
+            fields=fields,
+        )
+        await ctx.send(embed=embed)
+
+    @commands.hybrid_command(
         name="hackban",
-        aliases=["preban"],
-        description="Ban a user ID pre-emptively before they join the server",
+        description="Pre-ban a malicious user ID before they join the server",
+    )
+    @discord.app_commands.describe(
+        user_id="The numeric Discord user ID to pre-ban",
+        reason="Reason for pre-ban",
     )
     @commands.guild_only()
     @checks.mod_or_permissions(ban_members=True)
@@ -333,57 +311,31 @@ class Moderation(commands.Cog, name="moderation"):
         ctx: Context,
         user_id: str,
         *,
-        reason: str = "Not specified",
+        reason: str = "Pre-emptive hackban",
     ):
-        """Pre-emptively ban a malicious user ID."""
+        """Bans a user ID before they join the guild."""
         clean_id = user_id.strip()
         if not clean_id.isdigit():
-            embed = error_embed(description=f"Invalid user ID `{user_id}`. Must be numeric.")
-            await ctx.send(embed=embed)
+            await ctx.send(embed=error_embed(description="User ID must be numeric."))
             return
 
-        uid = int(clean_id)
-        case = await hackban_user(ctx, uid, reason=reason)
+        target_id = int(clean_id)
+        user, case = await hackban_user(ctx, user_id=target_id, reason=reason)
+        display = f"**{user}** (`{user.id}`)" if user else f"User ID `{target_id}`"
         embed = success_embed(
-            title="User Pre-banned!",
-            description=(
-                f"User ID `{uid}` was banned by **{ctx.author}**! (Case #{case.case_number})"
-            ),
+            title="User Pre-emptively Banned",
+            description=f"{display} was banned by **{ctx.author}**! (Case #{case.case_number})",
             fields=[("Reason", reason, False)],
-        )
-        await ctx.send(embed=embed)
-
-    @commands.hybrid_command(
-        name="unban",
-        description="Unban a user from the server with optional one-time reinvite link",
-    )
-    @commands.guild_only()
-    @checks.mod_or_permissions(ban_members=True)
-    async def unban(
-        self,
-        ctx: Context,
-        user: discord.User,
-        reinvite: bool = False,
-        *,
-        reason: str = "Not specified",
-    ):
-        """Unban a user with optional automatic reinvite link generation."""
-        case, invite_url = await unban_member(ctx, user, reinvite=reinvite, reason=reason)
-        fields: list[tuple[str, str, bool]] = [("Reason", reason, False)]
-        if reinvite:
-            status = f"[Invite Link]({invite_url})" if invite_url else "DM Failed / Unavailable"
-            fields.append(("Reinvite Link", status, True))
-
-        embed = success_embed(
-            title="User Unbanned!",
-            description=f"**{user}** was unbanned by **{ctx.author}**! (Case #{case.case_number})",
-            fields=fields,
         )
         await ctx.send(embed=embed)
 
     @commands.hybrid_command(
         name="massban",
         description="Ban multiple user IDs in bulk with interactive confirmation",
+    )
+    @discord.app_commands.describe(
+        user_ids="Space-separated Discord user IDs to ban",
+        reason="Reason for mass ban",
     )
     @commands.guild_only()
     @checks.admin_or_permissions(administrator=True)
@@ -392,50 +344,56 @@ class Moderation(commands.Cog, name="moderation"):
         ctx: Context,
         user_ids: str,
         *,
-        reason: str = "Not specified",
+        reason: str = "Massban operation",
     ):
-        """Ban multiple user IDs with an interactive confirmation guard."""
-        raw_tokens = [tok.strip(",") for tok in user_ids.split()]
-        valid_uids: list[int] = [int(tok) for tok in raw_tokens if tok.isdigit()]
+        """Ban multiple user IDs in bulk with ConfirmView safety."""
+        raw_ids = user_ids.replace(",", " ").split()
+        valid_ids: list[int] = []
+        for raw in raw_ids:
+            if raw.isdigit():
+                valid_ids.append(int(raw))
 
-        if not valid_uids:
-            embed = error_embed(description="No valid user IDs found in input.")
-            await ctx.send(embed=embed)
+        if not valid_ids:
+            await ctx.send(embed=error_embed(description="No valid numeric user IDs provided."))
             return
+
+        valid_ids = list(dict.fromkeys(valid_ids))
 
         view = ConfirmView(
             invoker_id=ctx.author.id,
-            confirm_label=f"Ban {len(valid_uids)} Users",
+            confirm_label=f"Massban {len(valid_ids)} Users",
         )
-        confirm_embed = make_embed(
-            title="Confirm Massban",
+        prompt_embed = make_embed(
+            title="⚠️ Confirm Mass Ban",
             description=(
-                f"Are you sure you want to ban **{len(valid_uids)}** user(s)?\n"
+                f"Are you sure you want to permanently ban **{len(valid_ids)}** user(s)?\n"
                 f"**Reason:** {reason}\n\n"
-                "This action will ban each user from the server."
+                "This action cannot be undone automatically."
             ),
-            color=EmbedColor.ERROR,
+            color=EmbedColor.WARNING,
         )
-        prompt_msg = await ctx.send(embed=confirm_embed, view=view)
+        prompt_msg = await ctx.send(embed=prompt_embed, view=view)
         await view.wait()
 
         if not view.value:
             cancel_embed = make_embed(
-                title="Massban Cancelled",
-                description="Massban operation was cancelled. No users were banned.",
-                color=0x808080,
+                title="Mass Ban Cancelled",
+                description="The mass ban operation was aborted.",
+                color=EmbedColor.INFO,
             )
             await prompt_msg.edit(embed=cancel_embed, view=None)
             return
 
-        banned, failed = await massban_users(ctx, valid_uids, reason=reason)
-        banned_preview = ", ".join(str(u) for u in banned[:15])
+        banned, failed = await massban_users(ctx, user_ids=valid_ids, reason=reason)
+        banned_preview = ", ".join(str(uid) for uid in banned[:15])
         if len(banned) > 15:
-            banned_preview += f" ... (+{len(banned) - 15} more)"
+            banned_preview += f" ...and {len(banned) - 15} more"
 
         result_embed = success_embed(
-            title="Massban Completed",
-            description=f"Successfully banned **{len(banned)}** users. Failed: **{len(failed)}**.",
+            title="Mass Ban Complete",
+            description=(
+                f"Successfully banned **{len(banned)}** users. Failed: **{len(failed)}**."
+            ),
             fields=[
                 ("Banned IDs", f"`{banned_preview}`" if banned else "None", False),
                 ("Reason", reason, False),
@@ -444,310 +402,7 @@ class Moderation(commands.Cog, name="moderation"):
         await prompt_msg.edit(embed=result_embed, view=None)
 
     @commands.hybrid_group(
-        name="purge",
-        aliases=["cleanup"],
-        description="Comprehensive message cleanup and purge suite",
-        invoke_without_command=True,
-    )
-    @discord.app_commands.describe(amount="Number of recent messages to purge (default: 10)")
-    @commands.guild_only()
-    @checks.mod_or_permissions(manage_messages=True)
-    async def purge(self, ctx: Context, amount: int = 10):
-        """Clean up recent messages in the current channel."""
-        if ctx.invoked_subcommand is None:
-            if amount < 1:
-                await ctx.send(
-                    embed=error_embed(description="Purge amount must be at least 1 message."),
-                    ephemeral=True,
-                )
-                return
-
-            if ctx.interaction is None:
-                with contextlib.suppress(discord.NotFound, discord.Forbidden):
-                    await ctx.message.delete()
-
-            count = await purge_channel(
-                ctx.channel,
-                amount=min(amount, 1000),
-                reason=f"Purge requested by {ctx.author}",
-            )
-            embed = success_embed(
-                title="Chat Cleared",
-                description=f"**{ctx.author}** cleared **{count}** messages.",
-            )
-            await ctx.send(embed=embed, delete_after=5)
-
-    @purge.command(
-        name="messages",
-        aliases=["all"],
-        description="Delete a specified number of recent messages",
-    )
-    @discord.app_commands.describe(amount="Number of recent messages to purge (1 to 1000)")
-    @commands.guild_only()
-    @checks.mod_or_permissions(manage_messages=True)
-    async def purge_messages_cmd(self, ctx: Context, amount: int = 10):
-        """Delete a specified number of recent messages."""
-        if amount < 1:
-            await ctx.send(
-                embed=error_embed(description="Purge amount must be at least 1 message."),
-                ephemeral=True,
-            )
-            return
-
-        if ctx.interaction is None:
-            with contextlib.suppress(discord.NotFound, discord.Forbidden):
-                await ctx.message.delete()
-
-        count = await purge_channel(
-            ctx.channel,
-            amount=min(amount, 1000),
-            reason=f"Purge messages requested by {ctx.author}",
-        )
-        embed = success_embed(
-            title="Chat Cleared",
-            description=f"**{ctx.author}** cleared **{count}** messages.",
-        )
-        await ctx.send(embed=embed, delete_after=5)
-
-    @purge.command(
-        name="user",
-        description="Delete messages strictly from a targeted user within the recent window",
-    )
-    @discord.app_commands.describe(
-        member="Target user whose messages should be purged",
-        amount="Maximum number of messages to scan (default: 100)",
-    )
-    @commands.guild_only()
-    @checks.mod_or_permissions(manage_messages=True)
-    async def purge_user_cmd(
-        self,
-        ctx: Context,
-        member: discord.Member | discord.User,
-        amount: int = 100,
-    ):
-        """Delete messages strictly from a targeted user within the recent window."""
-        if amount < 1:
-            await ctx.send(
-                embed=error_embed(description="Scan amount must be at least 1 message."),
-                ephemeral=True,
-            )
-            return
-
-        if ctx.interaction is None:
-            with contextlib.suppress(discord.NotFound, discord.Forbidden):
-                await ctx.message.delete()
-
-        count = await purge_user_messages(
-            ctx.channel,
-            user_id=member.id,
-            amount=min(amount, 1000),
-            reason=f"Purge user {member} requested by {ctx.author}",
-        )
-        embed = success_embed(
-            title="User Messages Cleared",
-            description=f"Cleared **{count}** messages from {member.mention}.",
-        )
-        await ctx.send(embed=embed, delete_after=5)
-
-    @purge.command(
-        name="bot",
-        description="Clean up messages sent by bots and bot command invocations",
-    )
-    @discord.app_commands.describe(
-        amount="Maximum number of messages to scan (default: 100)",
-        prefix="Optional custom command prefix to clean (default: server prefix)",
-    )
-    @commands.guild_only()
-    @checks.mod_or_permissions(manage_messages=True)
-    async def purge_bot_cmd(
-        self,
-        ctx: Context,
-        amount: int = 100,
-        prefix: str | None = None,
-    ):
-        """Clean up only bot commands and bot responses."""
-        if amount < 1:
-            await ctx.send(
-                embed=error_embed(description="Scan amount must be at least 1 message."),
-                ephemeral=True,
-            )
-            return
-
-        resolved_prefix = prefix or await self.bot.guild_repo.get_prefix(ctx.guild.id, default="!")
-
-        if ctx.interaction is None:
-            with contextlib.suppress(discord.NotFound, discord.Forbidden):
-                await ctx.message.delete()
-
-        count = await purge_bot_messages(
-            ctx.channel,
-            amount=min(amount, 1000),
-            prefix=resolved_prefix,
-            reason=f"Purge bot messages requested by {ctx.author}",
-        )
-        embed = success_embed(
-            title="Bot Messages Cleared",
-            description=f"Cleared **{count}** bot messages and commands.",
-        )
-        await ctx.send(embed=embed, delete_after=5)
-
-    @purge.command(
-        name="contains",
-        description="Clear messages containing specific words or spam patterns",
-    )
-    @discord.app_commands.describe(
-        text="The keyword, link, or phrase to match against",
-        amount="Maximum number of messages to scan (default: 100)",
-    )
-    @commands.guild_only()
-    @checks.mod_or_permissions(manage_messages=True)
-    async def purge_contains_cmd(
-        self,
-        ctx: Context,
-        text: str,
-        amount: int = 100,
-    ):
-        """Clear messages containing specific words or spam patterns."""
-        if not text.strip():
-            await ctx.send(
-                embed=error_embed(description="Match text cannot be empty."),
-                ephemeral=True,
-            )
-            return
-        if amount < 1:
-            await ctx.send(
-                embed=error_embed(description="Scan amount must be at least 1 message."),
-                ephemeral=True,
-            )
-            return
-
-        if ctx.interaction is None:
-            with contextlib.suppress(discord.NotFound, discord.Forbidden):
-                await ctx.message.delete()
-
-        count = await purge_containing_text(
-            ctx.channel,
-            text=text,
-            amount=min(amount, 1000),
-            reason=f"Purge text matching '{text}' requested by {ctx.author}",
-        )
-        embed = success_embed(
-            title="Pattern Messages Cleared",
-            description=f"Cleared **{count}** messages containing `{text}`.",
-        )
-        await ctx.send(embed=embed, delete_after=5)
-
-    @purge.command(
-        name="embeds",
-        description="Delete messages containing rich links, embeds, or cards",
-    )
-    @discord.app_commands.describe(amount="Maximum number of messages to scan (default: 100)")
-    @commands.guild_only()
-    @checks.mod_or_permissions(manage_messages=True)
-    async def purge_embeds_cmd(self, ctx: Context, amount: int = 100):
-        """Delete messages containing rich link previews or embeds."""
-        if amount < 1:
-            await ctx.send(
-                embed=error_embed(description="Scan amount must be at least 1 message."),
-                ephemeral=True,
-            )
-            return
-
-        if ctx.interaction is None:
-            with contextlib.suppress(discord.NotFound, discord.Forbidden):
-                await ctx.message.delete()
-
-        count = await purge_embed_messages(
-            ctx.channel,
-            amount=min(amount, 1000),
-            reason=f"Purge embeds requested by {ctx.author}",
-        )
-        embed = success_embed(
-            title="Embed Messages Cleared",
-            description=f"Cleared **{count}** messages containing embeds or link previews.",
-        )
-        await ctx.send(embed=embed, delete_after=5)
-
-    @purge.command(
-        name="files",
-        aliases=["attachments", "images"],
-        description="Delete image spam, uploads, or file attachments",
-    )
-    @discord.app_commands.describe(amount="Maximum number of messages to scan (default: 100)")
-    @commands.guild_only()
-    @checks.mod_or_permissions(manage_messages=True)
-    async def purge_files_cmd(self, ctx: Context, amount: int = 100):
-        """Delete image spam or file attachments."""
-        if amount < 1:
-            await ctx.send(
-                embed=error_embed(description="Scan amount must be at least 1 message."),
-                ephemeral=True,
-            )
-            return
-
-        if ctx.interaction is None:
-            with contextlib.suppress(discord.NotFound, discord.Forbidden):
-                await ctx.message.delete()
-
-        count = await purge_file_messages(
-            ctx.channel,
-            amount=min(amount, 1000),
-            reason=f"Purge files requested by {ctx.author}",
-        )
-        embed = success_embed(
-            title="File Uploads Cleared",
-            description=f"Cleared **{count}** messages with attachments or file uploads.",
-        )
-        await ctx.send(embed=embed, delete_after=5)
-
-    @purge.command(
-        name="after",
-        description="Clean all messages posted between a target message ID and the current time",
-    )
-    @discord.app_commands.describe(
-        message_id="The target Discord message ID to clean after",
-        limit="Maximum number of messages to purge (default: 500)",
-    )
-    @commands.guild_only()
-    @checks.mod_or_permissions(manage_messages=True)
-    async def purge_after_cmd(
-        self,
-        ctx: Context,
-        message_id: str,
-        limit: int = 500,
-    ):
-        """Clean all messages posted between a target message ID and the current time."""
-        clean_id = message_id.strip()
-        if not clean_id.isdigit():
-            await ctx.send(
-                embed=error_embed(
-                    description="Invalid message ID. Message ID must be a numeric integer."
-                ),
-                ephemeral=True,
-            )
-            return
-
-        target_id = int(clean_id)
-
-        if ctx.interaction is None:
-            with contextlib.suppress(discord.NotFound, discord.Forbidden):
-                await ctx.message.delete()
-
-        count = await purge_messages_after(
-            ctx.channel,
-            message_id=target_id,
-            limit=min(limit, 1000),
-            reason=f"Purge after message {target_id} requested by {ctx.author}",
-        )
-        embed = success_embed(
-            title="Messages Cleared",
-            description=f"Cleared **{count}** messages posted after message ID `{target_id}`.",
-        )
-        await ctx.send(embed=embed, delete_after=5)
-
-    @commands.hybrid_group(
         name="roles",
-        aliases=["role"],
         description="Manage administrative and moderator roles for this server",
     )
     @commands.guild_only()
@@ -757,96 +412,94 @@ class Moderation(commands.Cog, name="moderation"):
             embed = info_embed(
                 title="Server Role Configuration",
                 description=(
-                    "Configure administrative and moderator roles for this server:\n"
-                    "• `/roles addadmin <role>`: Designate an Administrator role\n"
-                    "• `/roles removeadmin <role>`: Remove an Administrator role\n"
-                    "• `/roles addmod <role>`: Designate a Moderator role\n"
-                    "• `/roles removemod <role>`: Remove a Moderator role\n"
+                    "Subcommands available:\n"
+                    "• `/roles add <type> <role>`: Add an Administrator or Moderator role\n"
+                    "• `/roles remove <type> <role>`: Remove a registered role\n"
                     "• `/roles list`: List all configured roles"
                 ),
             )
             await ctx.send(embed=embed)
 
-    @roles.command(name="addadmin", description="Designate an administrator role")
+    @roles.command(
+        name="add",
+        description="Configure an Administrator or Moderator role for the bot",
+    )
     @commands.guild_only()
     @checks.admin_or_permissions(administrator=True)
-    async def add_admin_role(self, ctx: Context, role: discord.Role):
-        """Designate an administrator role for this server."""
-        await self.bot.guild_repo.add_role(ctx.guild.id, role.id, "admin")
-        embed = success_embed(
-            title="Role Updated",
-            description=f"Successfully added {role.mention} as an **Administrator** role.",
-        )
-        await ctx.send(embed=embed)
-
-    @roles.command(name="removeadmin", description="Remove a designated administrator role")
-    @commands.guild_only()
-    @checks.admin_or_permissions(administrator=True)
-    async def remove_admin_role(self, ctx: Context, role: discord.Role):
-        """Remove a designated administrator role from this server."""
-        removed = await self.bot.guild_repo.remove_role(ctx.guild.id, role.id, "admin")
-        if not removed:
+    async def roles_add(self, ctx: Context, role_type: str, role: discord.Role):
+        """Add a role to the guild's administrator or moderator list."""
+        normalized_type = role_type.lower()
+        if normalized_type not in ("admin", "administrator", "mod", "moderator"):
             embed = error_embed(
-                title="Error",
-                description=f"{role.mention} is not registered as an Administrator role.",
+                title="Invalid Role Type",
+                description="Role type must be either `admin` or `mod`.",
             )
             await ctx.send(embed=embed)
             return
+
+        stored_type = "admin" if normalized_type in ("admin", "administrator") else "mod"
+        await self.bot.guild_repo.add_role(ctx.guild.id, role.id, stored_type)
         embed = success_embed(
-            title="Role Removed",
-            description=f"Successfully removed {role.mention} from Administrator roles.",
+            title="Role Configured",
+            description=(
+                f"Successfully registered {role.mention} as a **{stored_type.upper()}** role."
+            ),
         )
         await ctx.send(embed=embed)
 
-    @roles.command(name="addmod", description="Designate a moderator role")
+    @roles.command(
+        name="remove",
+        description="Remove an Administrator or Moderator role configuration",
+    )
     @commands.guild_only()
     @checks.admin_or_permissions(administrator=True)
-    async def add_mod_role(self, ctx: Context, role: discord.Role):
-        """Designate a moderator role for this server."""
-        await self.bot.guild_repo.add_role(ctx.guild.id, role.id, "mod")
-        embed = success_embed(
-            title="Role Updated",
-            description=f"Successfully added {role.mention} as a **Moderator** role.",
-        )
-        await ctx.send(embed=embed)
-
-    @roles.command(name="removemod", description="Remove a designated moderator role")
-    @commands.guild_only()
-    @checks.admin_or_permissions(administrator=True)
-    async def remove_mod_role(self, ctx: Context, role: discord.Role):
-        """Remove a designated moderator role from this server."""
-        removed = await self.bot.guild_repo.remove_role(ctx.guild.id, role.id, "mod")
-        if not removed:
+    async def roles_remove(self, ctx: Context, role_type: str, role: discord.Role):
+        """Remove a role from the guild's administrator or moderator list."""
+        normalized_type = role_type.lower()
+        if normalized_type not in ("admin", "administrator", "mod", "moderator"):
             embed = error_embed(
-                title="Error",
-                description=f"{role.mention} is not registered as a Moderator role.",
+                title="Invalid Role Type",
+                description="Role type must be either `admin` or `mod`.",
             )
             await ctx.send(embed=embed)
             return
-        embed = success_embed(
-            title="Role Removed",
-            description=f"Successfully removed {role.mention} from Moderator roles.",
-        )
+
+        stored_type = "admin" if normalized_type in ("admin", "administrator") else "mod"
+        removed = await self.bot.guild_repo.remove_role(ctx.guild.id, role.id, stored_type)
+        if removed:
+            embed = success_embed(
+                title="Role Removed",
+                description=(
+                    f"Successfully removed {role.mention} from **{stored_type.upper()}** roles."
+                ),
+            )
+        else:
+            embed = error_embed(
+                title="Role Not Found",
+                description=(
+                    f"{role.mention} is not registered as a {stored_type.capitalize()} role."
+                ),
+            )
         await ctx.send(embed=embed)
 
     @roles.command(name="list", description="List configured administrator and moderator roles")
     @commands.guild_only()
     @checks.mod_or_permissions()
-    async def list_roles(self, ctx: Context):
+    async def roles_list(self, ctx: Context):
         """List configured administrator and moderator roles for this server."""
-        roles_data = await self.bot.guild_repo.get_all_roles(ctx.guild.id)
-        admin_roles = [
-            ctx.guild.get_role(rid).mention
-            for rid in roles_data.get("admin", set())
-            if ctx.guild.get_role(rid)
-        ]
-        mod_roles = [
-            ctx.guild.get_role(rid).mention
-            for rid in roles_data.get("mod", set())
-            if ctx.guild.get_role(rid)
-        ]
+        roles_dict = await self.bot.guild_repo.get_all_roles(ctx.guild.id)
 
-        embed = make_embed(
+        admin_roles: list[str] = []
+        for role_id in roles_dict.get("admin", set()):
+            role = ctx.guild.get_role(role_id)
+            admin_roles.append(role.mention if role else f"`{role_id}` (deleted)")
+
+        mod_roles: list[str] = []
+        for role_id in roles_dict.get("mod", set()):
+            role = ctx.guild.get_role(role_id)
+            mod_roles.append(role.mention if role else f"`{role_id}` (deleted)")
+
+        embed = info_embed(
             title=f"Configured Roles: {ctx.guild.name}",
             fields=[
                 (
@@ -862,437 +515,6 @@ class Moderation(commands.Cog, name="moderation"):
             ],
         )
         await ctx.send(embed=embed)
-
-    @commands.hybrid_group(name="case", description="Manage and view individual moderation cases")
-    @commands.guild_only()
-    @checks.mod_or_permissions()
-    async def case_group(self, ctx: Context):
-        """Manage and view individual moderation cases."""
-        if ctx.invoked_subcommand is None:
-            embed = info_embed(
-                title="Case Management",
-                description=(
-                    "Manage recorded moderation cases:\n"
-                    "• `/case view <case_id>`: View details and reason of a case\n"
-                    "• `/case edit <case_id> <reason>`: Update reason and live-edit log\n"
-                    "• `/cases user <target_member>`: View full infraction history"
-                ),
-            )
-            await ctx.send(embed=embed)
-
-    @case_group.command(name="view", description="Lookup and display historical infraction details")
-    @commands.guild_only()
-    @checks.mod_or_permissions()
-    async def case_view(self, ctx: Context, case_id: int):
-        """Lookup and display historical infraction details for a specific case."""
-        case = await self.bot.mod_case_repo.get_case(ctx.guild.id, case_id)
-        if not case:
-            await ctx.send(
-                embed=error_embed(description=f"Case #{case_id} was not found for this server.")
-            )
-            return
-
-        target = ctx.guild.get_member(case.user_id) or await self.bot.fetch_user(case.user_id)
-        mod = ctx.guild.get_member(case.moderator_id) or await self.bot.fetch_user(
-            case.moderator_id
-        )
-
-        embed = modlog_case_embed(case, user=target, moderator=mod)
-        await ctx.send(embed=embed)
-
-    @case_group.command(
-        name="edit",
-        description="Update the reason for a moderation case and edit its live audit log",
-    )
-    @commands.guild_only()
-    @checks.mod_or_permissions()
-    async def case_edit(self, ctx: Context, case_id: int, *, new_reason: str):
-        """Update the reason for a moderation case and edit its live audit log."""
-        success, message, _ = await edit_case_reason(ctx, case_id, new_reason=new_reason)
-        if success:
-            await ctx.send(
-                embed=success_embed(
-                    title="Case Updated",
-                    description=message,
-                    fields=[("New Reason", new_reason, False)],
-                )
-            )
-        else:
-            await ctx.send(embed=error_embed(description=message))
-
-    @commands.hybrid_group(name="cases", description="Search and view member moderation history")
-    @commands.guild_only()
-    @checks.mod_or_permissions()
-    async def cases_group(self, ctx: Context):
-        """Search and view member moderation history."""
-        if ctx.invoked_subcommand is None:
-            embed = info_embed(
-                title="Moderation Case Search",
-                description="Use `/cases user <target_member>` to view all recorded infractions.",
-            )
-            await ctx.send(embed=embed)
-
-    @cases_group.command(
-        name="user",
-        description="Shows warning, kick, and ban history for a specific member",
-    )
-    @commands.guild_only()
-    @checks.mod_or_permissions()
-    async def cases_user(self, ctx: Context, member: discord.Member | discord.User):
-        """Shows warning, kick, and ban history for a specific member with pagination."""
-        cases = await self.bot.mod_case_repo.get_cases_for_user(ctx.guild.id, member.id)
-        if not cases:
-            await ctx.send(
-                embed=info_embed(
-                    title=f"Moderation History: {member}",
-                    description=f"No moderation cases recorded for {member.mention}.",
-                )
-            )
-            return
-
-        view = CaseHistoryPaginationView(
-            cases=cases,
-            target_user=member,
-            invoker_id=ctx.author.id,
-            page_size=5,
-        )
-        embed = view.build_embed()
-        await ctx.send(embed=embed, view=view if view.total_pages > 1 else None)
-
-    @commands.hybrid_group(name="warnings", description="Inspect and manage member warnings")
-    @commands.guild_only()
-    @checks.mod_or_permissions()
-    async def warnings(self, ctx: Context):
-        """Inspect and manage member warnings and point totals."""
-        if ctx.invoked_subcommand is None:
-            embed = info_embed(
-                title="Warning Management",
-                description=(
-                    "Subcommands available:\n"
-                    "• `/warnings user <member>`: View all warning infractions for a member\n"
-                    "• `/warnings delete <warning_id>`: Pardon or delete a warning record"
-                ),
-            )
-            await ctx.send(embed=embed)
-
-    @warnings.command(
-        name="user",
-        description="View active and expired warning infractions for a member",
-    )
-    @discord.app_commands.describe(member="The member whose warnings to inspect")
-    @commands.guild_only()
-    @checks.mod_or_permissions()
-    async def warnings_user(self, ctx: Context, member: discord.Member):
-        """View active and expired warning infractions for a member with pagination."""
-        user_warnings = await self.bot.warning_repo.get_warnings(ctx.guild.id, member.id)
-        if not user_warnings:
-            await ctx.send(
-                embed=info_embed(
-                    title=f"Warnings: {member}",
-                    description=f"{member.mention} has no recorded warnings.",
-                )
-            )
-            return
-
-        active_points = await self.bot.warning_repo.get_active_points(ctx.guild.id, member.id)
-        view = WarningHistoryPaginationView(
-            warnings=user_warnings,
-            target_user=member,
-            active_points=active_points,
-            invoker_id=ctx.author.id,
-            page_size=5,
-        )
-        embed = view.build_embed()
-        await ctx.send(embed=embed, view=view if view.total_pages > 1 else None)
-
-    @warnings.command(
-        name="delete",
-        description="Pardon or remove a specific warning record by ID",
-    )
-    @discord.app_commands.describe(warning_id="The numeric ID of the warning to pardon")
-    @commands.guild_only()
-    @checks.admin_or_permissions(manage_guild=True)
-    async def warnings_delete(self, ctx: Context, warning_id: int):
-        """Pardon or remove a specific warning record by ID."""
-        deleted = await self.bot.warning_repo.delete_warning(ctx.guild.id, warning_id)
-        if not deleted:
-            await ctx.send(
-                embed=error_embed(
-                    description=f"Warning ID `#{warning_id}` was not found for this server."
-                )
-            )
-            return
-
-        await ctx.send(
-            embed=success_embed(
-                title="Warning Removed",
-                description=f"Successfully removed warning `#{warning_id}`.",
-            )
-        )
-
-    @commands.hybrid_group(
-        name="warnset",
-        description="Configure warning rules, reasons, and automated escalations",
-    )
-    @commands.guild_only()
-    @checks.admin_or_permissions(administrator=True)
-    async def warnset(self, ctx: Context):
-        """Configure warning rules, reasons, and automated action thresholds."""
-        if ctx.invoked_subcommand is None:
-            settings = await self.bot.warning_repo.get_settings(ctx.guild.id)
-            decay_desc = (
-                f"{settings.decay_days} days" if settings.decay_days > 0 else "Never (Permanent)"
-            )
-            embed = info_embed(
-                title="Warning System Configuration",
-                description=(
-                    f"**Point Decay Interval:** `{decay_desc}`\n\n"
-                    "**Available Commands:**\n"
-                    "• `/warnset decay <days>`: Set points expiration period (0 for permanent)\n"
-                    "• `/warnset action list`: View all action thresholds\n"
-                    "• `/warnset action set <pts> <action> [dur]`: Configure an action threshold\n"
-                    "• `/warnset action delete <pts>`: Delete an action threshold\n"
-                    "• `/warnset reason list`: View configured warning reasons\n"
-                    "• `/warnset reason set <name> <pts> [desc]`: Configure a reason preset\n"
-                    "• `/warnset reason delete <name>`: Delete a reason preset"
-                ),
-            )
-            await ctx.send(embed=embed)
-
-    @warnset.command(
-        name="decay",
-        description="Configure warning points decay period in days (0 disables decay)",
-    )
-    @discord.app_commands.describe(
-        days="Number of days before warning points expire (0 to never expire)"
-    )
-    @commands.guild_only()
-    @checks.admin_or_permissions(administrator=True)
-    async def warnset_decay(self, ctx: Context, days: int):
-        """Configure warning points decay period in days."""
-        if days < 0:
-            await ctx.send(embed=error_embed(description="Decay days cannot be negative."))
-            return
-
-        await self.bot.warning_repo.set_decay(ctx.guild.id, days)
-        decay_desc = (
-            f"Warning points will now expire after **{days} days**."
-            if days > 0
-            else "Warning points will **never expire**."
-        )
-        await ctx.send(
-            embed=success_embed(
-                title="Warning Decay Updated",
-                description=decay_desc,
-            )
-        )
-
-    warnset_action = warnset.group(
-        name="action",
-        description="Manage automated escalation action thresholds",
-    )
-
-    @warnset_action.command(
-        name="list",
-        description="List all configured escalation action thresholds",
-    )
-    @commands.guild_only()
-    @checks.admin_or_permissions(administrator=True)
-    async def warnset_action_list(self, ctx: Context):
-        """List all configured escalation action thresholds."""
-        actions = await self.bot.warning_repo.get_actions(ctx.guild.id)
-        entries = []
-        for a in actions:
-            action_desc = a.action.upper()
-            if a.action == "timeout":
-                dur = humanize.precisedelta(timedelta(seconds=a.duration_seconds or 3600))
-                action_desc += f" ({dur})"
-            entries.append(f"• **{a.points} points** ➜ **{action_desc}**")
-
-        embed = info_embed(
-            title=f"Warning Action Thresholds: {ctx.guild.name}",
-            description="\n".join(entries) if entries else "No action thresholds configured.",
-        )
-        await ctx.send(embed=embed)
-
-    @warnset_action.command(
-        name="set",
-        description="Configure an automated escalation action at a point threshold",
-    )
-    @discord.app_commands.describe(
-        points="Points required to trigger action (e.g., 3, 5, 10)",
-        action="Action to execute: timeout, kick, ban, softban",
-        duration="Duration for timeout (e.g., 1h, 30m, 1d)",
-    )
-    @commands.guild_only()
-    @checks.admin_or_permissions(administrator=True)
-    async def warnset_action_set(
-        self,
-        ctx: Context,
-        points: int,
-        action: Literal["timeout", "kick", "ban", "softban"],
-        duration: str | None = None,
-    ):
-        """Configure an automated escalation action at a point threshold."""
-        if points < 1:
-            await ctx.send(embed=error_embed(description="Point threshold must be at least 1."))
-            return
-
-        duration_seconds: int | None = None
-        if action == "timeout":
-            if duration:
-                parsed = parse_duration(duration)
-                if not parsed:
-                    await ctx.send(
-                        embed=error_embed(
-                            description=(
-                                f"Invalid duration format: `{duration}`. "
-                                "Examples: `30m`, `1h`, `1d`."
-                            )
-                        )
-                    )
-                    return
-                duration_seconds = int(parsed.total_seconds())
-            else:
-                duration_seconds = 3600
-
-        await self.bot.warning_repo.set_action(
-            ctx.guild.id,
-            points=points,
-            action=action,
-            duration_seconds=duration_seconds,
-        )
-
-        action_display = action.upper()
-        if duration_seconds:
-            action_display += f" ({humanize.precisedelta(timedelta(seconds=duration_seconds))})"
-
-        await ctx.send(
-            embed=success_embed(
-                title="Action Threshold Configured",
-                description=(
-                    f"Reaching **{points} points** will automatically "
-                    f"execute: **{action_display}**."
-                ),
-            )
-        )
-
-    @warnset_action.command(
-        name="delete",
-        description="Remove an escalation action threshold by point value",
-    )
-    @discord.app_commands.describe(points="Point threshold to remove")
-    @commands.guild_only()
-    @checks.admin_or_permissions(administrator=True)
-    async def warnset_action_delete(self, ctx: Context, points: int):
-        """Remove an escalation action threshold by point value."""
-        deleted = await self.bot.warning_repo.delete_action(ctx.guild.id, points)
-        if not deleted:
-            await ctx.send(
-                embed=error_embed(
-                    description=f"No action threshold found configured at `{points}` points."
-                )
-            )
-            return
-
-        await ctx.send(
-            embed=success_embed(
-                title="Threshold Removed",
-                description=f"Successfully removed escalation threshold at `{points}` points.",
-            )
-        )
-
-    warnset_reason = warnset.group(
-        name="reason",
-        description="Manage preset warning reasons and point weights",
-    )
-
-    @warnset_reason.command(
-        name="list",
-        description="List all configured warning reasons and their point values",
-    )
-    @commands.guild_only()
-    @checks.admin_or_permissions(administrator=True)
-    async def warnset_reason_list(self, ctx: Context):
-        """List all configured warning reasons and their point values."""
-        reasons = await self.bot.warning_repo.get_reasons(ctx.guild.id)
-        entries = []
-        for r in reasons:
-            desc_part = f" - *{r.description}*" if r.description else ""
-            entries.append(
-                f"• **{r.name.title()}**: `{r.points} pt{'s' if r.points != 1 else ''}`{desc_part}"
-            )
-
-        embed = info_embed(
-            title=f"Warning Reasons: {ctx.guild.name}",
-            description="\n".join(entries) if entries else "No preset warning reasons configured.",
-        )
-        await ctx.send(embed=embed)
-
-    @warnset_reason.command(
-        name="set",
-        description="Create or update a preset warning reason with assigned point value",
-    )
-    @discord.app_commands.describe(
-        name="Preset name (e.g. spam, toxicity, nsfw)",
-        points="Points assigned to this infraction (at least 1)",
-        description="Optional brief explanation of the infraction rule",
-    )
-    @commands.guild_only()
-    @checks.admin_or_permissions(administrator=True)
-    async def warnset_reason_set(
-        self,
-        ctx: Context,
-        name: str,
-        points: int,
-        *,
-        description: str | None = None,
-    ):
-        """Create or update a preset warning reason with assigned point value."""
-        if points < 1:
-            await ctx.send(embed=error_embed(description="Points must be at least 1."))
-            return
-
-        await self.bot.warning_repo.set_reason(
-            ctx.guild.id,
-            name=name,
-            points=points,
-            description=description,
-        )
-        await ctx.send(
-            embed=success_embed(
-                title="Reason Preset Configured",
-                description=(
-                    f"Configured reason **{name.title()}** with **{points} "
-                    f"point{'s' if points != 1 else ''}**."
-                ),
-            )
-        )
-
-    @warnset_reason.command(
-        name="delete",
-        description="Delete a configured preset warning reason",
-    )
-    @discord.app_commands.describe(name="Name of the reason preset to delete")
-    @commands.guild_only()
-    @checks.admin_or_permissions(administrator=True)
-    async def warnset_reason_delete(self, ctx: Context, name: str):
-        """Delete a configured preset warning reason."""
-        deleted = await self.bot.warning_repo.delete_reason(ctx.guild.id, name)
-        if not deleted:
-            await ctx.send(
-                embed=error_embed(
-                    description=f"Reason preset `{name}` was not found for this server."
-                )
-            )
-            return
-
-        await ctx.send(
-            embed=success_embed(
-                title="Reason Deleted",
-                description=f"Successfully removed warning reason preset `{name}`.",
-            )
-        )
 
 
 async def setup(bot: DiscordBot):

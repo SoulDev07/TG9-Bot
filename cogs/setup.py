@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 from discord.ext import commands
 from discord.ext.commands import Context
 
-from helpers import checks
+from core import checks
 from views.settings import SettingsDashboardView
 from views.setup import SetupWizardView
 
@@ -33,7 +33,7 @@ class Setup(commands.Cog, name="setup"):
 
         settings = await self.bot.guild_repo.get_or_create(
             ctx.guild.id,
-            default_prefix=self.bot.config.bot_prefix,
+            default_prefix=self.bot.config.prefix,
         )
         admin_roles = await self.bot.guild_repo.get_roles(ctx.guild.id, "admin")
         mod_roles = await self.bot.guild_repo.get_roles(ctx.guild.id, "mod")

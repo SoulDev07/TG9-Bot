@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from helpers.db.database import DatabaseManager
+from core.db.database import DatabaseManager
 
 
 @pytest.fixture

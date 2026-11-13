@@ -2,18 +2,18 @@
 
 from __future__ import annotations
 
-import math
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, override
 
 import discord
 
-from helpers.embeds import EmbedColor, make_embed
+from core.embeds import EmbedColor, make_embed
+from views.pagination import BasePaginationView
 
 if TYPE_CHECKING:
-    from helpers.db.models import WarningRecord
+    from core.db.models import WarningRecord
 
 
-class WarningHistoryPaginationView(discord.ui.View):
+class WarningHistoryPaginationView(BasePaginationView["WarningRecord"]):
     """Paginated view for inspecting a member's active and decayed warnings."""
 
     def __init__(
@@ -24,27 +24,19 @@ class WarningHistoryPaginationView(discord.ui.View):
         invoker_id: int,
         page_size: int = 5,
     ) -> None:
-        super().__init__(timeout=180.0)
-        self.warnings = warnings
+        super().__init__(items=warnings, invoker_id=invoker_id, page_size=page_size)
         self.target_user = target_user
         self.active_points = active_points
-        self.invoker_id = invoker_id
-        self.page_size = page_size
-        self.current_page = 0
-        self.total_pages = max(1, math.ceil(len(warnings) / page_size))
-        self._update_buttons()
 
-    def _update_buttons(self) -> None:
-        """Update button enabled states and label counter."""
-        self.prev_button.disabled = self.current_page <= 0
-        self.next_button.disabled = self.current_page >= self.total_pages - 1
-        self.page_counter.label = f"Page {self.current_page + 1} of {self.total_pages}"
+    @property
+    def warnings(self) -> list[WarningRecord]:
+        """Convenience property for accessing warning records."""
+        return self.items
 
+    @override
     def build_embed(self) -> discord.Embed:
         """Construct the embed for the active page."""
-        start = self.current_page * self.page_size
-        end = start + self.page_size
-        page_warnings = self.warnings[start:end]
+        page_warnings = self.get_current_page_items()
 
         if not page_warnings:
             return make_embed(
@@ -81,53 +73,3 @@ class WarningHistoryPaginationView(discord.ui.View):
                 f"User ID: {self.target_user.id}"
             ),
         )
-
-    @discord.ui.button(label="◀ Previous", style=discord.ButtonStyle.secondary, row=0)
-    async def prev_button(
-        self,
-        interaction: discord.Interaction,
-        button: discord.ui.Button[WarningHistoryPaginationView],
-    ) -> None:
-        """Navigate to the previous page."""
-        if interaction.user.id != self.invoker_id:
-            await interaction.response.send_message(
-                "You are not authorized to use these pagination buttons.",
-                ephemeral=True,
-            )
-            return
-
-        self.current_page = max(0, self.current_page - 1)
-        self._update_buttons()
-        await interaction.response.edit_message(embed=self.build_embed(), view=self)
-
-    @discord.ui.button(
-        label="Page 1 of 1",
-        style=discord.ButtonStyle.secondary,
-        disabled=True,
-        row=0,
-    )
-    async def page_counter(
-        self,
-        interaction: discord.Interaction,
-        button: discord.ui.Button[WarningHistoryPaginationView],
-    ) -> None:
-        """Display page index label."""
-        return
-
-    @discord.ui.button(label="Next ▶", style=discord.ButtonStyle.secondary, row=0)
-    async def next_button(
-        self,
-        interaction: discord.Interaction,
-        button: discord.ui.Button[WarningHistoryPaginationView],
-    ) -> None:
-        """Navigate to the next page."""
-        if interaction.user.id != self.invoker_id:
-            await interaction.response.send_message(
-                "You are not authorized to use these pagination buttons.",
-                ephemeral=True,
-            )
-            return
-
-        self.current_page = min(self.total_pages - 1, self.current_page + 1)
-        self._update_buttons()
-        await interaction.response.edit_message(embed=self.build_embed(), view=self)

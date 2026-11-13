@@ -1,6 +1,6 @@
 {
-    "bot_prefix": "Tg9 ",
-    "bot_invite_link": "https://discord.gg/Z4vEvCC8Vf",
+    "prefix": "Tg9 ",
+    "invite_link": "https://discord.gg/Z4vEvCC8Vf",
     "owners": [
         559740429373931530,
         747801048802000957

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import discord
 
-from helpers.embeds import EmbedColor, make_embed
+from core.embeds import EmbedColor, make_embed
 
 
 def _render_bar(pct: float, length: int = 10) -> str:

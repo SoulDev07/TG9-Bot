@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 
 async def dynamic_prefix_resolver(bot: DiscordBot, message: discord.Message) -> list[str]:
     """Dynamically resolve command prefixes per guild with fallback to default."""
-    default_prefix = bot.config.bot_prefix
+    default_prefix = bot.config.prefix
     if not message.guild:
         return commands.when_mentioned_or(default_prefix)(bot, message)
 

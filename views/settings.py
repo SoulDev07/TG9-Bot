@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 import discord
 
-from helpers.embeds import make_embed
+from core.embeds import make_embed
 
 if TYPE_CHECKING:
     from bot import DiscordBot

@@ -1,11 +1,6 @@
 """Domain services handling cross-cutting business logic."""
 
-from services.moderation import (
-    ban_member,
-    edit_case_reason,
-    hackban_user,
-    kick_member,
-    massban_users,
+from services.cleanup import (
     purge_bot_messages,
     purge_channel,
     purge_containing_text,
@@ -13,6 +8,13 @@ from services.moderation import (
     purge_file_messages,
     purge_messages_after,
     purge_user_messages,
+)
+from services.moderation import (
+    ban_member,
+    edit_case_reason,
+    hackban_user,
+    kick_member,
+    massban_users,
     record_case,
     softban_member,
     tempban_member,

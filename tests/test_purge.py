@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import pytest
 
-from services.moderation import (
+from services.cleanup import (
     purge_bot_messages,
     purge_channel,
     purge_containing_text,

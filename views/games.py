@@ -6,7 +6,7 @@ import random
 
 import discord
 
-from helpers.embeds import EmbedColor, make_embed
+from core.embeds import EmbedColor, make_embed
 
 CHOICES: dict[str, int] = {
     "rock": 0,

@@ -6,11 +6,11 @@ from typing import TYPE_CHECKING
 
 import discord
 
-from helpers.embeds import make_embed, success_embed
+from core.embeds import make_embed, success_embed
 
 if TYPE_CHECKING:
     from bot import DiscordBot
-    from helpers.db.models import GuildSettings
+    from core.db.models import GuildSettings
 
 
 class SetupWizardView(discord.ui.View):

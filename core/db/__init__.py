@@ -1,11 +1,11 @@
 """Asynchronous database persistence layer."""
 
-from helpers.db.base import BaseRepository
-from helpers.db.blacklist_repo import BlacklistRepository
-from helpers.db.database import DatabaseManager
-from helpers.db.guild_repo import GuildRepository
-from helpers.db.modcase_repo import ModCaseRepository
-from helpers.db.models import (
+from core.db.base import BaseRepository
+from core.db.blacklists import BlacklistRepository
+from core.db.cases import ModCaseRepository
+from core.db.database import DatabaseManager
+from core.db.guilds import GuildRepository
+from core.db.models import (
     BlacklistEntry,
     GuildModule,
     GuildRole,
@@ -16,8 +16,8 @@ from helpers.db.models import (
     WarningRecord,
     WarningSettings,
 )
-from helpers.db.tempban_repo import TempBanRepository
-from helpers.db.warning_repo import WarningRepository
+from core.db.tempbans import TempBanRepository
+from core.db.warnings import WarningRepository
 
 __all__ = [
     "BaseRepository",

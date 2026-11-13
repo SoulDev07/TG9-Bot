@@ -5,10 +5,10 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from helpers.db.base import BaseRepository
+from core.db.base import BaseRepository
 
 if TYPE_CHECKING:
-    from helpers.db.database import DatabaseManager
+    from core.db.database import DatabaseManager
 
 
 class TempBanRepository(BaseRepository):

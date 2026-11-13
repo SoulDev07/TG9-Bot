@@ -8,9 +8,9 @@ from typing import TYPE_CHECKING, override
 import discord
 from discord import app_commands
 
-from helpers import exceptions
-from helpers.embeds import error_embed, warning_embed
-from helpers.logger import get_logger
+from core import exceptions
+from core.embeds import error_embed, warning_embed
+from core.logger import get_logger
 
 if TYPE_CHECKING:
     from bot import DiscordBot

@@ -12,7 +12,7 @@ import humanize
 from discord.ext import commands
 from discord.ext.commands import Context
 
-from helpers.embeds import error_embed, make_embed, success_embed
+from core.embeds import error_embed, make_embed, success_embed
 from views.poll import PollView
 
 BOT_VERSION = "2.0.0"
@@ -26,7 +26,6 @@ class General(commands.Cog, name="general"):
 
     @commands.hybrid_command(
         name="info",
-        aliases=["botinfo", "stats"],
         description="Get bot information, status, and uptime",
     )
     async def info(self, ctx: Context):
@@ -42,10 +41,10 @@ class General(commands.Cog, name="general"):
 
         if ctx.guild:
             prefix = await self.bot.guild_repo.get_prefix(
-                ctx.guild.id, default=getattr(self.bot.config, "bot_prefix", "Tg9 ")
+                ctx.guild.id, default=getattr(self.bot.config, "prefix", "Tg9 ")
             )
         else:
-            prefix = getattr(self.bot.config, "bot_prefix", "Tg9 ")
+            prefix = getattr(self.bot.config, "prefix", "Tg9 ")
 
         embed = make_embed(
             title="TG9 Bot: Status & Information",
@@ -101,7 +100,7 @@ class General(commands.Cog, name="general"):
         """View or configure the server command prefix."""
         settings = await self.bot.guild_repo.get_or_create(
             ctx.guild.id,
-            default_prefix=self.bot.config.bot_prefix,
+            default_prefix=self.bot.config.prefix,
         )
 
         if new_prefix is None:
@@ -145,12 +144,11 @@ class General(commands.Cog, name="general"):
 
     @commands.hybrid_command(
         name="server",
-        aliases=["support", "supportserver"],
         description="Get support server invite link",
     )
     async def server(self, ctx: Context):
         """Get the invite link for the bot's support server."""
-        server_link = getattr(self.bot.config, "bot_invite_link", "")
+        server_link = getattr(self.bot.config, "invite_link", "")
         if not server_link:
             await ctx.send("Support server invite link is currently not configured.")
             return

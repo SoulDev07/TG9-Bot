@@ -8,8 +8,8 @@ import discord
 from discord.ext import commands
 from discord.ext.commands import Context
 
-from helpers import exceptions
-from helpers.embeds import EmbedColor, make_embed
+from core import exceptions
+from core.embeds import EmbedColor, make_embed
 from views.games import RockPaperScissorsView
 
 EMBED_COLORS = {
@@ -66,7 +66,6 @@ class Fun(commands.Cog, name="fun"):
 
     @commands.hybrid_command(
         name="rps",
-        aliases=["rockpaperscissors"],
         description="Play interactive Rock, Paper, Scissors with buttons",
     )
     async def rock_paper_scissors(self, ctx: Context):

@@ -5,8 +5,8 @@ from __future__ import annotations
 import discord
 from discord.ext.commands import Context
 
-from helpers.config import get_config
-from helpers.exceptions import HierarchyError
+from core.config import get_config
+from core.exceptions import HierarchyError
 
 
 def validate_hierarchy(ctx: Context, target: discord.Member) -> None:

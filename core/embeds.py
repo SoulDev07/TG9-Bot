@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 import discord
 
 if TYPE_CHECKING:
-    from helpers.db.models import ModCase
+    from core.db.models import ModCase
 
 
 class EmbedColor:

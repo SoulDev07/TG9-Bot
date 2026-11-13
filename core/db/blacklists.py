@@ -5,12 +5,12 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from helpers.db.base import BaseRepository
-from helpers.db.models import BlacklistEntry
-from helpers.logger import get_logger
+from core.db.base import BaseRepository
+from core.db.models import BlacklistEntry
+from core.logger import get_logger
 
 if TYPE_CHECKING:
-    from helpers.db.database import DatabaseManager
+    from core.db.database import DatabaseManager
 
 logger = get_logger()
 

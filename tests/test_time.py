@@ -6,7 +6,7 @@ from datetime import timedelta
 
 import pytest
 
-from helpers.time import parse_duration
+from core.time import parse_duration
 
 
 @pytest.mark.parametrize(
