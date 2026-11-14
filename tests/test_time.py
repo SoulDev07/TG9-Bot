@@ -24,7 +24,9 @@ from core.time import parse_duration
         ("1w", 604800),
         ("2weeks", 1209600),
         ("1d12h", 86400 + 43200),
+        ("1d 12h", 86400 + 43200),
         ("2h30m10s", 7200 + 1800 + 10),
+        ("2h 30m 10s", 7200 + 1800 + 10),
     ],
 )
 def test_parse_duration_valid(input_str: str, expected_seconds: int) -> None:

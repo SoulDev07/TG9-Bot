@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 from typing import TYPE_CHECKING
 
 import discord
@@ -28,6 +29,7 @@ class SettingsDashboardView(discord.ui.View):
         self.guild = guild
         self.invoker_id = invoker_id
         self._module_states: dict[str, bool] = {}
+        self.message: discord.Message | None = None
 
     async def initialize(self) -> None:
         """Fetch current module states from database and sync button visuals."""
@@ -160,3 +162,12 @@ class SettingsDashboardView(discord.ui.View):
             )
             return False
         return True
+
+    async def on_timeout(self) -> None:
+        """Disable all dashboard buttons when timeout expires."""
+        for item in self.children:
+            if isinstance(item, discord.ui.Button):
+                item.disabled = True
+        if self.message:
+            with contextlib.suppress(discord.HTTPException):
+                await self.message.edit(view=self)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 from typing import TYPE_CHECKING
 
 import discord
@@ -61,17 +62,22 @@ class Cases(commands.Cog, name="cases"):
     @checks.mod_or_permissions()
     async def case_view(self, ctx: Context, case_id: int):
         """Look up details of a past moderation case."""
-        case = await self.bot.mod_case_repo.get_case(ctx.guild.id, case_id)
+        case = await self.bot.case_repo.get_case(ctx.guild.id, case_id)
         if not case:
             await ctx.send(
                 embed=error_embed(description=f"Case #{case_id} was not found for this server.")
             )
             return
 
-        target = ctx.guild.get_member(case.user_id) or await self.bot.fetch_user(case.user_id)
-        mod = ctx.guild.get_member(case.moderator_id) or await self.bot.fetch_user(
-            case.moderator_id
-        )
+        target = ctx.guild.get_member(case.user_id)
+        if not target:
+            with contextlib.suppress(discord.HTTPException):
+                target = await self.bot.fetch_user(case.user_id)
+
+        mod = ctx.guild.get_member(case.moderator_id)
+        if not mod:
+            with contextlib.suppress(discord.HTTPException):
+                mod = await self.bot.fetch_user(case.moderator_id)
 
         embed = modlog_case_embed(case, user=target, moderator=mod)
         await ctx.send(embed=embed)
@@ -116,7 +122,7 @@ class Cases(commands.Cog, name="cases"):
     @checks.mod_or_permissions()
     async def cases_user(self, ctx: Context, member: discord.Member | discord.User):
         """Shows warning, kick, and ban history for a specific member with pagination."""
-        cases = await self.bot.mod_case_repo.get_cases_for_user(ctx.guild.id, member.id)
+        cases = await self.bot.case_repo.get_cases_for_user(ctx.guild.id, member.id)
         if not cases:
             await ctx.send(
                 embed=info_embed(
@@ -133,7 +139,8 @@ class Cases(commands.Cog, name="cases"):
             page_size=5,
         )
         embed = view.build_embed()
-        await ctx.send(embed=embed, view=view if view.total_pages > 1 else None)
+        message = await ctx.send(embed=embed, view=view if view.total_pages > 1 else None)
+        view.message = message
 
 
 async def setup(bot: DiscordBot):

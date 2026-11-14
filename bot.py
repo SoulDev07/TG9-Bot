@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import os
 import platform
 import random
@@ -18,9 +19,9 @@ from core import exceptions
 from core.config import BotConfig, load_config
 from core.db import (
     BlacklistRepository,
+    CaseRepository,
     DatabaseManager,
     GuildRepository,
-    ModCaseRepository,
     TempBanRepository,
     WarningRepository,
 )
@@ -36,17 +37,25 @@ logger = get_logger()
 
 intents = discord.Intents.default()
 intents.message_content = True
+intents.typing = False
+intents.voice_states = False
 
 
 class DiscordBot(commands.Bot):
     """Core TG9 Bot instance managing cogs and lifecycle events."""
 
     def __init__(self, bot_config: BotConfig) -> None:
+        member_cache_flags = discord.MemberCacheFlags.from_intents(intents)
+        member_cache_flags.voice = False
+
         super().__init__(
             command_prefix=dynamic_prefix_resolver,
             intents=intents,
             help_command=None,
             tree_cls=BotCommandTree,
+            chunk_guilds_at_startup=False,
+            member_cache_flags=member_cache_flags,
+            max_messages=500,
         )
         self.config: BotConfig = bot_config
         self.start_time: datetime = datetime.now(UTC)
@@ -54,7 +63,7 @@ class DiscordBot(commands.Bot):
         self.db = DatabaseManager(db_path=bot_config.database_path)
         self.guild_repo = GuildRepository(self.db)
         self.blacklist_repo = BlacklistRepository(self.db)
-        self.mod_case_repo = ModCaseRepository(self.db)
+        self.case_repo = CaseRepository(self.db)
         self.tempban_repo = TempBanRepository(self.db)
         self.warning_repo = WarningRepository(self.db)
 
@@ -190,9 +199,14 @@ class DiscordBot(commands.Bot):
         actual_error = getattr(error, "original", error)
 
         match actual_error:
+            case commands.CommandNotFound():
+                return
+
             case commands.MissingRequiredArgument() as err:
                 embed = error_embed(description=str(err).capitalize())
-                await ctx.send(embed=embed)
+
+            case commands.BadArgument() as err:
+                embed = error_embed(title="Invalid Argument", description=str(err))
 
             case commands.MissingPermissions() as err:
                 missing_perms = ", ".join(err.missing_permissions)
@@ -201,7 +215,6 @@ class DiscordBot(commands.Bot):
                         f"You are missing permission `{missing_perms}` to execute this command!"
                     )
                 )
-                await ctx.send(embed=embed)
 
             case commands.BotMissingPermissions() as err:
                 missing_perms = ", ".join(err.missing_permissions)
@@ -210,7 +223,6 @@ class DiscordBot(commands.Bot):
                         f"I am missing permission `{missing_perms}` to execute this command!"
                     )
                 )
-                await ctx.send(embed=embed)
 
             case commands.CommandOnCooldown() as err:
                 minutes, seconds = divmod(err.retry_after, 60)
@@ -227,7 +239,6 @@ class DiscordBot(commands.Bot):
                     title="Cooldown!",
                     description=f"You can use this command again in {' '.join(time_parts)}.",
                 )
-                await ctx.send(embed=embed)
 
             case exceptions.ModuleDisabled() as err:
                 embed = error_embed(
@@ -237,32 +248,27 @@ class DiscordBot(commands.Bot):
                         "on this server."
                     ),
                 )
-                await ctx.send(embed=embed)
 
             case exceptions.UserNotOwner():
                 embed = error_embed(description="You are not the owner of this bot!")
-                await ctx.send(embed=embed)
 
             case exceptions.UserNotGuildOwner():
                 embed = error_embed(
                     title="Server Owner Only",
                     description="You must be the server owner to execute this command!",
                 )
-                await ctx.send(embed=embed)
 
             case exceptions.MissingRoleOrPermission() as err:
                 embed = error_embed(
                     title="Permission Denied",
                     description=str(err),
                 )
-                await ctx.send(embed=embed)
 
             case exceptions.HierarchyError() as err:
                 embed = error_embed(
                     title="Hierarchy Violation",
                     description=str(err),
                 )
-                await ctx.send(embed=embed)
 
             case _:
                 logger.error(
@@ -271,6 +277,9 @@ class DiscordBot(commands.Bot):
                     error=str(actual_error),
                 )
                 raise actual_error
+
+        with contextlib.suppress(discord.HTTPException):
+            await ctx.send(embed=embed)
 
 
 async def main() -> None:
@@ -294,6 +303,11 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
+    if sys.platform != "win32":
+        with contextlib.suppress(ImportError):
+            import uvloop
+
+            uvloop.install()
     try:
         asyncio.run(main())
     except KeyboardInterrupt:

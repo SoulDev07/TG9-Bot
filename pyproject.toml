@@ -5,7 +5,7 @@ description = "A modern, general-purpose, plug-and-play Discord bot"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "discord.py>=2.7.0",
+    "discord.py[speed]>=2.7.0",
     "aiohttp>=3.11.0",
     "aiosqlite>=0.22.0",
     "pydantic>=2.10.0",
@@ -16,7 +16,12 @@ dependencies = [
     "humanize>=4.15.0",
     "aiocache>=0.12.3",
     "colorama>=0.4.6",
+    "uvloop>=0.21.0; sys_platform != 'win32'",
 ]
+
+[tool.uv]
+package = false
+compile-bytecode = true
 
 [dependency-groups]
 dev = [

@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     from core.db.database import DatabaseManager
 
 
-class ModCaseRepository(BaseRepository):
+class CaseRepository(BaseRepository):
     """Repository handling sequential moderation case records."""
 
     __slots__ = ()

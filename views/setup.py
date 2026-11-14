@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 from typing import TYPE_CHECKING
 
 import discord
@@ -35,6 +36,7 @@ class SetupWizardView(discord.ui.View):
         self.selected_welcome_id: int | None = initial_settings.welcome_channel_id
         self.selected_admin_role_id: int | None = next(iter(initial_admin_roles), None)
         self.selected_mod_role_id: int | None = next(iter(initial_mod_roles), None)
+        self.message: discord.Message | None = None
 
     def build_embed(self) -> discord.Embed:
         """Construct the live preview embed reflecting current draft selections."""
@@ -208,3 +210,12 @@ class SetupWizardView(discord.ui.View):
         )
         await interaction.response.edit_message(embed=cancel_embed, view=self)
         self.stop()
+
+    async def on_timeout(self) -> None:
+        """Disable all wizard selectors when timeout expires."""
+        for child in self.children:
+            if hasattr(child, "disabled"):
+                child.disabled = True
+        if self.message:
+            with contextlib.suppress(discord.HTTPException):
+                await self.message.edit(view=self)

@@ -14,8 +14,13 @@ from core.logger import get_logger
 
 logger = get_logger()
 
-# Task-local tracking of the currently active connection to eliminate nested deadlocks
-_current_conn: ContextVar[aiosqlite.Connection | None] = ContextVar("_current_conn", default=None)
+# Task-local tracking of the currently active connections to eliminate nested deadlocks
+_current_writer: ContextVar[aiosqlite.Connection | None] = ContextVar(
+    "_current_writer", default=None
+)
+_current_reader: ContextVar[aiosqlite.Connection | None] = ContextVar(
+    "_current_reader", default=None
+)
 
 SCHEMA_DDL = """
 PRAGMA foreign_keys = ON;
@@ -208,47 +213,50 @@ class DatabaseManager:
     @asynccontextmanager
     async def read(self) -> AsyncIterator[aiosqlite.Connection]:
         """Acquire a reader connection from the pool, supporting concurrent readers."""
-        active = _current_conn.get()
-        if active is not None:
-            # Reentrancy: reuse existing connection for this task without deadlocking
-            yield active
+        writer = _current_writer.get()
+        if writer is not None:
+            yield writer
+            return
+
+        reader = _current_reader.get()
+        if reader is not None:
+            yield reader
             return
 
         await self._ensure_initialized()
         conn = await asyncio.wait_for(self._reader_pool.get(), timeout=self._timeout)
-        token = _current_conn.set(conn)
+        token = _current_reader.set(conn)
         try:
             yield conn
         finally:
-            _current_conn.reset(token)
+            _current_reader.reset(token)
             await self._reader_pool.put(conn)
 
     @asynccontextmanager
     async def write(self) -> AsyncIterator[aiosqlite.Connection]:
         """Acquire the dedicated writer connection under exclusive writer lock."""
-        active = _current_conn.get()
-        if active is not None:
-            # Reentrancy: task already inside a connection context
-            yield active
+        writer = _current_writer.get()
+        if writer is not None:
+            yield writer
             return
 
         conn = await self._acquire_writer()
-        token = _current_conn.set(conn)
+        token = _current_writer.set(conn)
         try:
             yield conn
         except BaseException:
             await conn.rollback()
             raise
         finally:
-            _current_conn.reset(token)
+            _current_writer.reset(token)
             await self._release_writer()
 
     @asynccontextmanager
     async def connection(self) -> AsyncIterator[aiosqlite.Connection]:
         """Default connection context manager prioritizing write safety with reentrant borrowing."""
-        active = _current_conn.get()
-        if active is not None:
-            yield active
+        writer = _current_writer.get()
+        if writer is not None:
+            yield writer
             return
 
         async with self.write() as conn:

@@ -47,7 +47,8 @@ class Setup(commands.Cog, name="setup"):
             initial_mod_roles=mod_roles,
         )
         embed = view.build_embed()
-        await ctx.send(embed=embed, view=view, ephemeral=True)
+        msg = await ctx.send(embed=embed, view=view, ephemeral=True)
+        view.message = msg
 
     @commands.hybrid_command(
         name="settings",
@@ -66,7 +67,8 @@ class Setup(commands.Cog, name="setup"):
         )
         await view.initialize()
         embed = await view.build_embed()
-        await ctx.send(embed=embed, view=view, ephemeral=True)
+        msg = await ctx.send(embed=embed, view=view, ephemeral=True)
+        view.message = msg
 
 
 async def setup(bot: DiscordBot):

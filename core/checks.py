@@ -42,16 +42,21 @@ class PrivilegeLevel(enum.IntEnum):
         if ctx.author.id == ctx.guild.owner_id:
             return cls.GUILD_OWNER
 
-        if ctx.author.guild_permissions.administrator:
+        guild_perms = getattr(ctx.author, "guild_permissions", None)
+        if guild_perms and guild_perms.administrator:
             return cls.ADMIN
 
-        if await ctx.bot.guild_repo.has_role_type(ctx.author, "admin"):
+        if isinstance(ctx.author, discord.Member) and await ctx.bot.guild_repo.has_role_type(
+            ctx.author, "admin"
+        ):
             return cls.ADMIN
 
-        if ctx.author.guild_permissions.manage_guild:
+        if guild_perms and guild_perms.manage_guild:
             return cls.MOD
 
-        if await ctx.bot.guild_repo.has_role_type(ctx.author, "mod"):
+        if isinstance(ctx.author, discord.Member) and await ctx.bot.guild_repo.has_role_type(
+            ctx.author, "mod"
+        ):
             return cls.MOD
 
         return cls.NONE
@@ -103,7 +108,7 @@ def admin_or_permissions(**perms: bool):
             return True
 
         if perms:
-            author_perms = dict(ctx.author.guild_permissions)
+            author_perms = dict(getattr(ctx.author, "guild_permissions", ()))
             has_all = all(author_perms.get(p, False) for p, req in perms.items() if req)
             if has_all:
                 return True
@@ -125,7 +130,7 @@ def mod_or_permissions(**perms: bool):
             return True
 
         if perms:
-            author_perms = dict(ctx.author.guild_permissions)
+            author_perms = dict(getattr(ctx.author, "guild_permissions", ()))
             has_all = all(author_perms.get(p, False) for p, req in perms.items() if req)
             if has_all:
                 return True

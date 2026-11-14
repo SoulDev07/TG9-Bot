@@ -9,9 +9,9 @@ import pytest
 
 from core.db import (
     BlacklistRepository,
+    CaseRepository,
     DatabaseManager,
     GuildRepository,
-    ModCaseRepository,
     TempBanRepository,
     WarningRepository,
 )
@@ -86,9 +86,9 @@ async def test_blacklist_repository_flow(db: DatabaseManager) -> None:
 
 
 @pytest.mark.asyncio
-async def test_mod_case_repository_flow(db: DatabaseManager) -> None:
+async def test_case_repository_flow(db: DatabaseManager) -> None:
     """Test sequential case assignment, reason live updates, and case queries."""
-    repo = ModCaseRepository(db)
+    repo = CaseRepository(db)
     guild_id = 8888
 
     case1 = await repo.create_case(

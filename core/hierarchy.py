@@ -34,19 +34,33 @@ def validate_hierarchy(ctx: Context, target: discord.Member) -> None:
     is_owner_invoker = bot_config.is_owner(ctx.author.id)
     is_guild_owner = ctx.author.id == ctx.guild.owner_id
 
+    author_member = (
+        ctx.author
+        if isinstance(ctx.author, discord.Member)
+        else ctx.guild.get_member(ctx.author.id)
+    )
+    author_top_role = getattr(author_member, "top_role", None)
+    target_top_role = getattr(target, "top_role", None)
+
     # Rule 4: Moderator must outrank target (bypassed by bot owner or guild owner)
-    if not (is_owner_invoker or is_guild_owner) and ctx.author.top_role <= target.top_role:
+    if (
+        not (is_owner_invoker or is_guild_owner)
+        and author_top_role
+        and target_top_role
+        and author_top_role <= target_top_role
+    ):
         raise HierarchyError(
-            f"Your highest role ({ctx.author.top_role.mention}) must be strictly higher than "
-            f"{target.mention}'s highest role ({target.top_role.mention})."
+            f"Your highest role ({author_top_role.mention}) must be strictly higher than "
+            f"{target.mention}'s highest role ({target_top_role.mention})."
         )
 
     # Rule 5: Bot's highest role must outrank target
-    bot_member = ctx.guild.me
-    if bot_member.top_role <= target.top_role:
+    bot_member = ctx.guild.me or (ctx.bot.user and ctx.guild.get_member(ctx.bot.user.id))
+    bot_top_role = getattr(bot_member, "top_role", None)
+    if bot_top_role and target_top_role and bot_top_role <= target_top_role:
         raise HierarchyError(
-            f"My highest role ({bot_member.top_role.mention}) must be strictly higher than "
-            f"{target.mention}'s highest role ({target.top_role.mention}) to take action."
+            f"My highest role ({bot_top_role.mention}) must be strictly higher than "
+            f"{target.mention}'s highest role ({target_top_role.mention}) to take action."
         )
 
 

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import platform
 import time
 from datetime import UTC, datetime
@@ -35,16 +34,14 @@ class General(commands.Cog, name="general"):
         uptime = humanize.naturaldelta(now - start_time)
 
         guilds_count = len(self.bot.guilds)
-        total_members = await asyncio.to_thread(
-            lambda: sum(guild.member_count or 0 for guild in self.bot.guilds)
-        )
+        total_members = sum(guild.member_count or 0 for guild in self.bot.guilds)
 
         if ctx.guild:
             prefix = await self.bot.guild_repo.get_prefix(
-                ctx.guild.id, default=getattr(self.bot.config, "prefix", "Tg9 ")
+                ctx.guild.id, default=self.bot.config.prefix
             )
         else:
-            prefix = getattr(self.bot.config, "prefix", "Tg9 ")
+            prefix = self.bot.config.prefix
 
         embed = make_embed(
             title="TG9 Bot: Status & Information",
@@ -148,7 +145,7 @@ class General(commands.Cog, name="general"):
     )
     async def server(self, ctx: Context):
         """Get the invite link for the bot's support server."""
-        server_link = getattr(self.bot.config, "invite_link", "")
+        server_link = self.bot.config.invite_link
         if not server_link:
             await ctx.send("Support server invite link is currently not configured.")
             return

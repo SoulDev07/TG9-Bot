@@ -17,6 +17,8 @@ async def purge_channel(
     reason: str | None = None,
 ) -> int:
     """Purge a specified number of messages from a channel with optional filtering predicate."""
+    if not hasattr(channel, "purge"):
+        return 0
     purged = await channel.purge(limit=amount, check=check, after=after, reason=reason)
     return len(purged)
 

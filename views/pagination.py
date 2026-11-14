@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import math
 from typing import override
 
@@ -23,6 +24,7 @@ class BasePaginationView[T](discord.ui.View):
         self.invoker_id = invoker_id
         self.page_size = page_size
         self.current_page = 0
+        self.message: discord.Message | None = None
         self.total_pages = max(1, math.ceil(len(items) / page_size))
         self._update_buttons()
 
@@ -87,3 +89,12 @@ class BasePaginationView[T](discord.ui.View):
         self.current_page = min(self.total_pages - 1, self.current_page + 1)
         self._update_buttons()
         await interaction.response.edit_message(embed=self.build_embed(), view=self)
+
+    @override
+    async def on_timeout(self) -> None:
+        """Disable buttons upon timeout expiration."""
+        self.prev_button.disabled = True
+        self.next_button.disabled = True
+        if self.message:
+            with contextlib.suppress(discord.HTTPException):
+                await self.message.edit(view=self)

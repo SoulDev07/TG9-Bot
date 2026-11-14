@@ -59,10 +59,12 @@ class Moderation(commands.Cog, name="moderation"):
         expired = await self.bot.tempban_repo.get_expired_tempbans(now)
         for guild_id, user_id, reason in expired:
             guild = self.bot.get_guild(guild_id)
-            if not guild:
-                continue
-            with contextlib.suppress(discord.NotFound, discord.Forbidden, discord.HTTPException):
-                await guild.unban(discord.Object(id=user_id), reason=f"Tempban expired: {reason}")
+            if guild:
+                with contextlib.suppress(
+                    discord.NotFound, discord.Forbidden, discord.HTTPException
+                ):
+                    unban_reason = f"Tempban expired: {reason}"
+                    await guild.unban(discord.Object(id=user_id), reason=unban_reason)
             await self.bot.tempban_repo.remove_tempban(guild_id, user_id)
             logger.info("tempban_expired_unbanned", guild_id=guild_id, user_id=user_id)
 

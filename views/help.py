@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 from typing import TYPE_CHECKING
 
 import discord
@@ -162,6 +163,7 @@ class HelpMenuView(discord.ui.View):
         super().__init__(timeout=timeout)
         self.bot = bot
         self.invoker_id = invoker_id
+        self.message: discord.Message | None = None
         self.add_item(HelpCategorySelect())
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
@@ -199,3 +201,12 @@ class HelpMenuView(discord.ui.View):
             author_icon=bot_avatar,
             footer="TG9 Bot • Python 3.12+ • discord.py 2.x",
         )
+
+    async def on_timeout(self) -> None:
+        """Disable dropdown when help menu times out."""
+        for child in self.children:
+            if hasattr(child, "disabled"):
+                child.disabled = True
+        if self.message:
+            with contextlib.suppress(discord.HTTPException):
+                await self.message.edit(view=self)

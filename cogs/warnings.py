@@ -160,7 +160,8 @@ class Warnings(commands.Cog, name="warnings"):
             page_size=5,
         )
         embed = view.build_embed()
-        await ctx.send(embed=embed, view=view if view.total_pages > 1 else None)
+        message = await ctx.send(embed=embed, view=view if view.total_pages > 1 else None)
+        view.message = message
 
     @warnings.command(
         name="delete",

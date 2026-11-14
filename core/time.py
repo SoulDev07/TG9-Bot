@@ -6,12 +6,12 @@ import re
 from datetime import timedelta
 
 TIME_REGEX = re.compile(
-    r"^"
-    r"((?P<weeks>\d+?)\s*(?:weeks?|w))?"
-    r"((?P<days>\d+?)\s*(?:days?|d))?"
-    r"((?P<hours>\d+?)\s*(?:hours?|hrs?|h))?"
-    r"((?P<minutes>\d+?)\s*(?:minutes?|mins?|m))?"
-    r"((?P<seconds>\d+?)\s*(?:seconds?|secs?|s))?"
+    r"^\s*"
+    r"((?P<weeks>\d+)\s*(?:weeks?|w)[\s,]*)?"
+    r"((?P<days>\d+)\s*(?:days?|d)[\s,]*)?"
+    r"((?P<hours>\d+)\s*(?:hours?|hrs?|h)[\s,]*)?"
+    r"((?P<minutes>\d+)\s*(?:minutes?|mins?|m)[\s,]*)?"
+    r"((?P<seconds>\d+)\s*(?:seconds?|secs?|s)[\s,]*)?"
     r"$",
     re.IGNORECASE,
 )

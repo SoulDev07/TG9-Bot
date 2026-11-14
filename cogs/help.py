@@ -27,7 +27,8 @@ class Help(commands.Cog, name="help"):
         """Browse commands across all categories with an interactive menu."""
         view = HelpMenuView(bot=self.bot, invoker_id=ctx.author.id)
         embed = view.build_home_embed()
-        await ctx.send(embed=embed, view=view)
+        message = await ctx.send(embed=embed, view=view)
+        view.message = message
 
 
 async def setup(bot: DiscordBot):

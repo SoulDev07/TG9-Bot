@@ -39,6 +39,11 @@ class GuildRepository(BaseRepository):
 
     async def get(self, guild_id: int) -> GuildSettings | None:
         """Fetch settings for a guild, or return None if unconfigured."""
+        cache_key = f"guild_settings:{guild_id}"
+        cached: GuildSettings | None = await self._cache.get(cache_key)
+        if cached is not None:
+            return cached
+
         async with self.db.read() as conn:
             cursor = await conn.execute(
                 "SELECT * FROM guild_settings WHERE guild_id = ?",
@@ -55,6 +60,7 @@ class GuildRepository(BaseRepository):
                 created_at=datetime.fromisoformat(row["created_at"]),
                 updated_at=datetime.fromisoformat(row["updated_at"]),
             )
+            await self._cache.set(cache_key, settings, ttl=300)
             await self._cache.set(f"prefix:{guild_id}", settings.prefix, ttl=600)
             return settings
 
@@ -69,7 +75,7 @@ class GuildRepository(BaseRepository):
         async with self.db.write() as conn:
             await conn.execute(
                 """
-                INSERT INTO guild_settings
+                INSERT OR IGNORE INTO guild_settings
                 (guild_id, prefix, modlog_channel_id, welcome_channel_id, created_at, updated_at)
                 VALUES (?, ?, NULL, NULL, ?, ?)
                 """,
@@ -85,11 +91,11 @@ class GuildRepository(BaseRepository):
                 )
             await conn.commit()
 
-        await self._cache.set(f"prefix:{guild_id}", default_prefix, ttl=600)
-        for module in ("moderation", "fun", "general"):
-            await self._cache.set(f"mod:{guild_id}:{module}", True, ttl=300)
+        settings = await self.get(guild_id)
+        if settings is not None:
+            return settings
 
-        return GuildSettings(
+        new_settings = GuildSettings(
             guild_id=guild_id,
             prefix=default_prefix,
             modlog_channel_id=None,
@@ -97,6 +103,12 @@ class GuildRepository(BaseRepository):
             created_at=now,
             updated_at=now,
         )
+        await self._cache.set(f"guild_settings:{guild_id}", new_settings, ttl=300)
+        await self._cache.set(f"prefix:{guild_id}", default_prefix, ttl=600)
+        for module in ("moderation", "fun", "general"):
+            await self._cache.set(f"mod:{guild_id}:{module}", True, ttl=300)
+
+        return new_settings
 
     async def update_prefix(self, guild_id: int, prefix: str) -> None:
         """Update the custom prefix for a guild."""
@@ -111,6 +123,7 @@ class GuildRepository(BaseRepository):
                 (prefix, now_iso, guild_id),
             )
             await conn.commit()
+        await self._cache.delete(f"guild_settings:{guild_id}")
         await self._cache.set(f"prefix:{guild_id}", prefix, ttl=600)
 
     async def set_modlog_channel(self, guild_id: int, channel_id: int | None) -> None:
@@ -126,6 +139,7 @@ class GuildRepository(BaseRepository):
                 (channel_id, now_iso, guild_id),
             )
             await conn.commit()
+        await self._cache.delete(f"guild_settings:{guild_id}")
 
     async def set_welcome_channel(self, guild_id: int, channel_id: int | None) -> None:
         """Set or clear the welcome announcements channel."""
@@ -140,6 +154,7 @@ class GuildRepository(BaseRepository):
                 (channel_id, now_iso, guild_id),
             )
             await conn.commit()
+        await self._cache.delete(f"guild_settings:{guild_id}")
 
     async def is_module_enabled(self, guild_id: int, module: str) -> bool:
         """Check whether a specific feature module is enabled in a guild."""
