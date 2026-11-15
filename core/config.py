@@ -47,7 +47,7 @@ class BotConfig(BaseSettings):
     ) -> tuple[PydanticBaseSettingsSource, ...]:
         """Layer configuration: init args > env vars > .env > config.json."""
         config_path = Path("config.json")
-        sources: list[PydanticBaseSettingsSource] = [init_settings, env_settings, dotenv_settings]
+        sources = [init_settings, env_settings, dotenv_settings]
         if config_path.exists():
             sources.append(JsonConfigSettingsSource(settings_cls, json_file=config_path))
         sources.append(file_secret_settings)

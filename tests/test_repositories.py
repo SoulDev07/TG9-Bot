@@ -62,6 +62,19 @@ async def test_guild_repository_flow(db: DatabaseManager) -> None:
     admin_roles = await repo.get_roles(guild_id, "admin")
     assert 999 not in admin_roles
 
+    # Self-role configuration
+    await repo.add_role(guild_id, role_id=888, role_type="selfrole")
+    self_roles = await repo.get_roles(guild_id, "selfrole")
+    assert 888 in self_roles
+
+    all_roles = await repo.get_all_roles(guild_id)
+    assert 888 in all_roles.get("selfrole", set())
+
+    removed_self = await repo.remove_role(guild_id, role_id=888, role_type="selfrole")
+    assert removed_self is True
+    self_roles_after = await repo.get_roles(guild_id, "selfrole")
+    assert 888 not in self_roles_after
+
 
 @pytest.mark.asyncio
 async def test_blacklist_repository_flow(db: DatabaseManager) -> None:

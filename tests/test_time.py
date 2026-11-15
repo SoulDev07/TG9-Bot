@@ -6,7 +6,7 @@ from datetime import timedelta
 
 import pytest
 
-from core.time import parse_duration
+from core.time import format_duration, parse_duration
 
 
 @pytest.mark.parametrize(
@@ -51,3 +51,24 @@ def test_parse_duration_valid(input_str: str, expected_seconds: int) -> None:
 def test_parse_duration_invalid(invalid_input: str) -> None:
     """Verify that malformed or zero duration strings return None."""
     assert parse_duration(invalid_input) is None
+
+
+@pytest.mark.parametrize(
+    ("seconds", "expected_str"),
+    [
+        (0, "0 seconds"),
+        (-5, "0 seconds"),
+        (10, "10 seconds"),
+        (1, "1 second"),
+        (60, "1 minute"),
+        (120, "2 minutes"),
+        (65, "1 minute 5 seconds"),
+        (3600, "1 hour"),
+        (7200, "2 hours"),
+        (3665, "1 hour 1 minute 5 seconds"),
+        (21600, "6 hours"),
+    ],
+)
+def test_format_duration(seconds: int, expected_str: str) -> None:
+    """Verify seconds format into human-readable duration strings."""
+    assert format_duration(seconds) == expected_str

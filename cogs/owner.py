@@ -212,7 +212,7 @@ class Owner(commands.Cog, name="owner"):
             )
             await ctx.send(embed=embed)
 
-    @commands.command(name="cogs")
+    @commands.command(name="cogs", aliases=["extensions", "modules"])
     @checks.is_owner()
     async def list_cogs(self, ctx: Context):
         """List all currently loaded cogs and extensions."""
@@ -240,7 +240,7 @@ class Owner(commands.Cog, name="owner"):
         )
         await ctx.send(embed=embed)
 
-    @commands.command(name="shutdown")
+    @commands.command(name="shutdown", aliases=["sd", "sleep"])
     @checks.is_owner()
     async def shutdown(self, ctx: Context):
         """Terminate the bot process safely."""

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, override
+from typing import TYPE_CHECKING
 
 import discord
 
@@ -33,7 +33,6 @@ class WarningHistoryPaginationView(BasePaginationView["WarningRecord"]):
         """Convenience property for accessing warning records."""
         return self.items
 
-    @override
     def build_embed(self) -> discord.Embed:
         """Construct the embed for the active page."""
         page_warnings = self.get_current_page_items()

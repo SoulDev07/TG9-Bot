@@ -219,6 +219,51 @@ async def warn_member(
     return case, warning_record, new_points, escalated_action
 
 
+async def timeout_member(
+    ctx: Context,
+    member: discord.Member,
+    duration: timedelta,
+    reason: str,
+) -> tuple[ModCase, str]:
+    """Validate hierarchy, apply Discord timeout, notify member, and record mod case."""
+    validate_target(ctx, member)
+    audit_reason = get_audit_reason(ctx.author, reason)
+    readable_duration = humanize.precisedelta(duration)
+
+    with contextlib.suppress(discord.Forbidden, discord.HTTPException):
+        await member.send(
+            f"You were timed out in **{ctx.guild.name}** for **{readable_duration}** by **{ctx.author}**!\n"
+            f"Reason: {reason}"
+        )
+
+    await member.timeout(duration, reason=audit_reason)
+    case = await record_case(
+        ctx,
+        action="timeout",
+        target=member,
+        reason=f"{reason} (Duration: {readable_duration})",
+    )
+    return case, readable_duration
+
+
+async def untimeout_member(
+    ctx: Context,
+    member: discord.Member,
+    reason: str,
+) -> ModCase:
+    """Validate hierarchy, remove Discord timeout, notify member, and record mod case."""
+    validate_target(ctx, member)
+    audit_reason = get_audit_reason(ctx.author, reason)
+
+    with contextlib.suppress(discord.Forbidden, discord.HTTPException):
+        await member.send(
+            f"Your timeout in **{ctx.guild.name}** was removed by **{ctx.author}**!\nReason: {reason}"
+        )
+
+    await member.timeout(None, reason=audit_reason)
+    return await record_case(ctx, action="untimeout", target=member, reason=reason)
+
+
 async def kick_member(
     ctx: Context,
     member: discord.Member,

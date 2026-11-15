@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import enum
-from typing import TYPE_CHECKING
 
+import discord
 from discord.ext.commands import Context, check
 
 from core.config import get_config
@@ -15,9 +15,6 @@ from core.exceptions import (
     UserNotOwner,
 )
 from core.hierarchy import validate_hierarchy
-
-if TYPE_CHECKING:
-    import discord
 
 
 class PrivilegeLevel(enum.IntEnum):

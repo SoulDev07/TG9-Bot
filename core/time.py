@@ -36,3 +36,22 @@ def parse_duration(duration_str: str) -> timedelta | None:
 
     delta = timedelta(**time_dict)
     return delta if delta.total_seconds() > 0 else None
+
+
+def format_duration(seconds: int) -> str:
+    """Format seconds into a human-readable duration string."""
+    if seconds <= 0:
+        return "0 seconds"
+
+    hours, remainder = divmod(seconds, 3600)
+    minutes, secs = divmod(remainder, 60)
+
+    parts: list[str] = []
+    if hours > 0:
+        parts.append(f"{hours} hour{'s' if hours != 1 else ''}")
+    if minutes > 0:
+        parts.append(f"{minutes} minute{'s' if minutes != 1 else ''}")
+    if secs > 0:
+        parts.append(f"{secs} second{'s' if secs != 1 else ''}")
+
+    return " ".join(parts)

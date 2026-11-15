@@ -2,7 +2,6 @@
 
 import logging
 import sys
-from typing import Any
 
 import structlog
 
@@ -19,7 +18,7 @@ def setup_logging(
         level=numeric_level,
     )
 
-    shared_processors: list[Any] = [
+    shared_processors = [
         structlog.contextvars.merge_contextvars,
         structlog.processors.add_log_level,
         structlog.processors.TimeStamper(fmt="%Y-%m-%d %H:%M:%S", utc=False),
@@ -40,6 +39,6 @@ def setup_logging(
     return structlog.get_logger()
 
 
-def get_logger(*args: Any, **initial_values: Any) -> structlog.stdlib.BoundLogger:
+def get_logger(*args, **initial_values) -> structlog.stdlib.BoundLogger:
     """Obtain a structured logger instance with optional bound context."""
     return structlog.get_logger(*args, **initial_values)

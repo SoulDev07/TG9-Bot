@@ -9,7 +9,7 @@ import platform
 import random
 import sys
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, override
+from typing import TYPE_CHECKING
 
 import discord
 from discord.ext import commands, tasks
@@ -104,7 +104,6 @@ class DiscordBot(commands.Bot):
     async def before_status_task(self) -> None:
         await self.wait_until_ready()
 
-    @override
     async def setup_hook(self) -> None:
         """Initialize database schema, warm caches, and load cogs before connecting."""
         bot_name = self.user.name if self.user else "TG9-Bot"
@@ -123,7 +122,6 @@ class DiscordBot(commands.Bot):
         if not self.status_task.is_running():
             self.status_task.start()
 
-    @override
     async def close(self) -> None:
         """Gracefully terminate background tasks, database connections, and bot."""
         if self.status_task.is_running():

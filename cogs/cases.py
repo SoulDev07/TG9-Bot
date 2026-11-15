@@ -102,7 +102,11 @@ class Cases(commands.Cog, name="cases"):
         else:
             await ctx.send(embed=error_embed(description=message))
 
-    @commands.hybrid_group(name="cases", description="Search and view member moderation history")
+    @commands.hybrid_group(
+        name="cases",
+        aliases=["infractions", "modlogs"],
+        description="Search and view member moderation history",
+    )
     @commands.guild_only()
     @checks.mod_or_permissions()
     async def cases_group(self, ctx: Context):

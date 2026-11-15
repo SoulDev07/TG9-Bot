@@ -8,13 +8,13 @@ import discord
 
 from core.embeds import EmbedColor, make_embed
 
-CHOICES: dict[str, int] = {
+CHOICES = {
     "rock": 0,
     "paper": 1,
     "scissors": 2,
 }
 
-EMOJIS: dict[str, str] = {
+EMOJIS = {
     "rock": "🪨",
     "paper": "📰",
     "scissors": "✂️",

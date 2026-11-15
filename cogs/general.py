@@ -25,6 +25,7 @@ class General(commands.Cog, name="general"):
 
     @commands.hybrid_command(
         name="info",
+        aliases=["botinfo", "stats"],
         description="Get bot information, status, and uptime",
     )
     async def info(self, ctx: Context):
@@ -63,7 +64,9 @@ class General(commands.Cog, name="general"):
         await ctx.send(embed=embed)
 
     @commands.hybrid_command(
-        name="ping", description="Check bot latency and gateway responsiveness"
+        name="ping",
+        aliases=["latency"],
+        description="Check bot latency and gateway responsiveness",
     )
     async def ping(self, ctx: Context):
         """Check the bot's gateway latency and message roundtrip speed."""
@@ -141,6 +144,7 @@ class General(commands.Cog, name="general"):
 
     @commands.hybrid_command(
         name="server",
+        aliases=["support"],
         description="Get support server invite link",
     )
     async def server(self, ctx: Context):
@@ -172,6 +176,125 @@ class General(commands.Cog, name="general"):
         embed = view.build_embed()
         message = await ctx.send(embed=embed, view=view)
         view.message = message
+
+    @commands.hybrid_command(
+        name="userinfo",
+        aliases=["user", "whois"],
+        description="Get detailed user profile and member information",
+    )
+    @discord.app_commands.describe(member="The user or member to inspect (defaults to you)")
+    async def userinfo(self, ctx: Context, member: discord.Member | discord.User | None = None):
+        """Get detailed profile and membership information about a user."""
+        target = member or ctx.author
+        created_ts = int(target.created_at.timestamp())
+
+        fields = [
+            ("Username", str(target), True),
+            ("User ID", f"`{target.id}`", True),
+            ("Account Created", f"<t:{created_ts}:R>\n(<t:{created_ts}:f>)", True),
+        ]
+
+        if isinstance(target, discord.Member):
+            if target.joined_at:
+                joined_ts = int(target.joined_at.timestamp())
+                fields.append(("Joined Server", f"<t:{joined_ts}:R>\n(<t:{joined_ts}:f>)", True))
+
+            if target.premium_since:
+                boost_ts = int(target.premium_since.timestamp())
+                fields.append(("Boosting Since", f"<t:{boost_ts}:R>", True))
+
+            roles = [r.mention for r in reversed(target.roles) if not r.is_default()]
+            roles_str = ", ".join(roles[:15]) if roles else "None"
+            if len(roles) > 15:
+                roles_str += f" *(and {len(roles) - 15} more)*"
+            fields.append((f"Roles ({len(roles)})", roles_str, False))
+
+            key_perms = []
+            perms = target.guild_permissions
+            if perms.administrator:
+                key_perms.append("Administrator")
+            if perms.manage_guild:
+                key_perms.append("Manage Server")
+            if perms.manage_roles:
+                key_perms.append("Manage Roles")
+            if perms.manage_channels:
+                key_perms.append("Manage Channels")
+            if perms.ban_members:
+                key_perms.append("Ban Members")
+            if perms.kick_members:
+                key_perms.append("Kick Members")
+            if perms.moderate_members:
+                key_perms.append("Moderate Members")
+            if perms.manage_messages:
+                key_perms.append("Manage Messages")
+            if key_perms:
+                fields.append(("Key Permissions", ", ".join(key_perms), False))
+
+        embed = make_embed(
+            title=f"User Info: {target.display_name}",
+            fields=fields,
+            footer=f"Requested by {ctx.author}",
+        )
+        embed.set_thumbnail(url=target.display_avatar.url)
+        await ctx.send(embed=embed)
+
+    @commands.hybrid_command(
+        name="serverinfo",
+        aliases=["guildinfo", "guild"],
+        description="Get detailed statistics and metrics about this server",
+    )
+    @commands.guild_only()
+    async def serverinfo(self, ctx: Context):
+        """Get detailed statistics and metrics about the current server."""
+        guild = ctx.guild
+        created_ts = int(guild.created_at.timestamp())
+
+        total_members = guild.member_count or 0
+        text_channels = len(guild.text_channels)
+        voice_channels = len(guild.voice_channels)
+        categories = len(guild.categories)
+        roles_count = len(guild.roles) - 1
+
+        fields = [
+            ("Owner", guild.owner.mention if guild.owner else f"`{guild.owner_id}`", True),
+            ("Server ID", f"`{guild.id}`", True),
+            ("Created", f"<t:{created_ts}:R>", True),
+            ("Members", f"**{total_members}** total", True),
+            ("Channels", f"💬 {text_channels} text • 🔊 {voice_channels} voice • 📁 {categories} categories", True),
+            ("Roles", f"`{roles_count}` roles", True),
+            ("Boost Status", f"Tier **{guild.premium_tier}** ({guild.premium_subscription_count or 0} boosts)", True),
+            ("Verification Level", str(guild.verification_level).capitalize(), True),
+        ]
+
+        embed = make_embed(
+            title=f"Server Info: {guild.name}",
+            fields=fields,
+            footer=f"Requested by {ctx.author}",
+        )
+        if guild.icon:
+            embed.set_thumbnail(url=guild.icon.url)
+        if guild.banner:
+            embed.set_image(url=guild.banner.url)
+
+        await ctx.send(embed=embed)
+
+    @commands.hybrid_command(
+        name="avatar",
+        aliases=["av", "pfp"],
+        description="Display full resolution avatar for a user",
+    )
+    @discord.app_commands.describe(user="The user whose avatar to view (defaults to you)")
+    async def avatar(self, ctx: Context, user: discord.User | discord.Member | None = None):
+        """Display full resolution avatar for a user."""
+        target = user or ctx.author
+        avatar_url = target.display_avatar.url
+
+        embed = make_embed(
+            title=f"Avatar: {target.display_name}",
+            description=f"[Click here to open in browser]({avatar_url})",
+        )
+        embed.set_image(url=avatar_url)
+        await ctx.send(embed=embed)
 
 
 async def setup(bot: commands.Bot):

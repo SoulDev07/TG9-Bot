@@ -18,7 +18,9 @@ from services.moderation import (
     record_case,
     softban_member,
     tempban_member,
+    timeout_member,
     unban_member,
+    untimeout_member,
     validate_target,
     warn_member,
 )
@@ -39,7 +41,9 @@ __all__ = [
     "record_case",
     "softban_member",
     "tempban_member",
+    "timeout_member",
     "unban_member",
+    "untimeout_member",
     "validate_target",
     "warn_member",
 ]

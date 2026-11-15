@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import contextlib
-from typing import TYPE_CHECKING, override
+from typing import TYPE_CHECKING
 
 import discord
 from discord import app_commands
@@ -21,13 +21,12 @@ logger = get_logger()
 class BotCommandTree(app_commands.CommandTree):
     """Custom command tree providing global interaction guards and error dispatching."""
 
-    @override
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         """Global guard for slash commands, modals, and component interactions."""
         if interaction.user.bot:
             return False
 
-        bot: DiscordBot = interaction.client  # type: ignore
+        bot = interaction.client
         if await bot.blacklist_repo.is_blacklisted(interaction.user.id):
             embed = error_embed(
                 title="Access Denied",
@@ -39,7 +38,6 @@ class BotCommandTree(app_commands.CommandTree):
 
         return True
 
-    @override
     async def on_error(
         self,
         interaction: discord.Interaction,

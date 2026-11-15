@@ -12,7 +12,7 @@ from core.embeds import EmbedColor, make_embed
 if TYPE_CHECKING:
     from bot import DiscordBot
 
-CATEGORIES: dict[str, dict[str, str]] = {
+CATEGORIES = {
     "moderation": {
         "title": "🛡️ Moderation & Enforcement",
         "description": (
@@ -25,13 +25,19 @@ CATEGORIES: dict[str, dict[str, str]] = {
             "• `/warnset reason list|set|delete`: Presets and point weights\n\n"
             "**Enforcement Toolkit:**\n"
             "• `/timeout <member> <duration> [reason]`: Temporary server timeout\n"
+            "• `/untimeout <member> [reason]`: Revoke active server timeout\n"
             "• `/kick <member> [reason]`: Kick member with audit log\n"
             "• `/ban <member> [reason]`: Permanent guild ban\n"
             "• `/tempban <member> <duration> [reason]`: Scheduled temporary ban\n"
             "• `/softban <member> [reason]`: Ban and immediately unban to clear chat\n"
             "• `/hackban <user_id> [reason]`: Pre-ban a user before they join\n"
             "• `/unban <user_id> [--reinvite]`: Revoke ban with optional DM invite\n"
-            "• `/massban <user_ids...>`: Bulk ban multiple IDs with confirmation\n\n"
+            "• `/massban <user_ids...>`: Bulk ban multiple IDs with confirmation\n"
+            "• `/slowmode [duration] [channel]`: Inspect or set channel slowmode\n"
+            "• `/announce <channel> <message>`: Broadcast styled announcement\n\n"
+            "**Role Management:**\n"
+            "• `/selfroles`: Open the interactive self-role picker\n"
+            "• `/selfrole add|remove|list|post`: Configure self-assignable roles\n\n"
             "**Cleanup Suite:**\n"
             "• `/purge [amount]`: Bulk delete recent messages\n"
             "• `/purge user <member> [amount]`: Clean messages from a specific member\n"
@@ -51,6 +57,9 @@ CATEGORIES: dict[str, dict[str, str]] = {
             "• `/info`: System metrics, gateway latency, and server stats\n"
             "• `/ping`: Gateway latency and API roundtrip latency\n"
             "• `/prefix [new_prefix]`: View or configure custom server prefix\n"
+            "• `/userinfo [member]`: View profile, join date, permissions, and roles\n"
+            "• `/serverinfo`: View server metrics, channels, roles, and boost tier\n"
+            "• `/avatar [user]`: View full resolution avatar with direct link\n"
             "• `/server`: Direct invite link to support server\n"
             "• `/poll <question>`: Create an interactive button-based voting poll"
         ),
@@ -59,6 +68,8 @@ CATEGORIES: dict[str, dict[str, str]] = {
         "title": "🎮 Fun & Games",
         "description": (
             "• `/coinflip`: Flip a two-sided coin\n"
+            "• `/roll [sides] [count]`: Roll dice with custom sides and count\n"
+            "• `/8ball <question>`: Consult the magic 8-ball\n"
             "• `/rps`: Play interactive Rock, Paper, Scissors with buttons"
         ),
     },

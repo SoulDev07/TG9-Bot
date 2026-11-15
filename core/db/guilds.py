@@ -270,7 +270,7 @@ class GuildRepository(BaseRepository):
                 (guild_id,),
             )
             rows = await cursor.fetchall()
-            result: dict[str, set[int]] = {"admin": set(), "mod": set()}
+            result: dict[str, set[int]] = {"admin": set(), "mod": set(), "selfrole": set()}
             for row in rows:
                 rtype = row["role_type"].lower()
                 result.setdefault(rtype, set()).add(row["role_id"])

@@ -46,13 +46,13 @@ def make_embed(
             embed.add_field(name=name, value=value, inline=inline)
 
     if footer:
-        footer_kwargs: dict[str, Any] = {"text": footer}
+        footer_kwargs = {"text": footer}
         if footer_icon:
             footer_kwargs["icon_url"] = footer_icon
         embed.set_footer(**footer_kwargs)
 
     if author_name:
-        author_kwargs: dict[str, Any] = {"name": author_name}
+        author_kwargs = {"name": author_name}
         if author_icon:
             author_kwargs["icon_url"] = author_icon
         embed.set_author(**author_kwargs)

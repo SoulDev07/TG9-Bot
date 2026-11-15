@@ -21,6 +21,7 @@ class Help(commands.Cog, name="help"):
 
     @commands.hybrid_command(
         name="help",
+        aliases=["commands", "cmds"],
         description="Browse command categories and syntax with an interactive dropdown",
     )
     async def help(self, ctx: Context):

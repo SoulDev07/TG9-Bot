@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import contextlib
 import math
-from typing import override
 
 import discord
 
@@ -43,7 +42,6 @@ class BasePaginationView[T](discord.ui.View):
         """Construct the embed for the active page. Must be overridden by subclasses."""
         raise NotImplementedError("Subclasses must implement build_embed")
 
-    @override
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         """Enforce that only the command invoker can click pagination controls."""
         if interaction.user.id != self.invoker_id:
@@ -90,7 +88,6 @@ class BasePaginationView[T](discord.ui.View):
         self._update_buttons()
         await interaction.response.edit_message(embed=self.build_embed(), view=self)
 
-    @override
     async def on_timeout(self) -> None:
         """Disable buttons upon timeout expiration."""
         self.prev_button.disabled = True

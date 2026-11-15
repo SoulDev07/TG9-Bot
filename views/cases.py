@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, override
+from typing import TYPE_CHECKING
 
 import discord
 
@@ -31,7 +31,6 @@ class CaseHistoryPaginationView(BasePaginationView["ModCase"]):
         """Convenience property for accessing the case records."""
         return self.items
 
-    @override
     def build_embed(self) -> discord.Embed:
         """Construct the embed for the active page."""
         page_cases = self.get_current_page_items()

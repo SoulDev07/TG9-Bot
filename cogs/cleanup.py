@@ -47,6 +47,7 @@ class Cleanup(commands.Cog, name="cleanup"):
 
     @commands.hybrid_group(
         name="purge",
+        aliases=["clear", "clean"],
         description="Comprehensive message cleanup and purge suite",
         invoke_without_command=True,
     )

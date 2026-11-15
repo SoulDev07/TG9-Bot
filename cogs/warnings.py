@@ -61,6 +61,7 @@ class Warnings(commands.Cog, name="warnings"):
 
     @commands.hybrid_command(
         name="warn",
+        aliases=["warning"],
         description="Warns a user with optional points and automated threshold escalation",
     )
     @discord.app_commands.describe(
@@ -116,7 +117,11 @@ class Warnings(commands.Cog, name="warnings"):
         )
         await ctx.send(embed=embed)
 
-    @commands.hybrid_group(name="warnings", description="Inspect and manage member warnings")
+    @commands.hybrid_group(
+        name="warnings",
+        aliases=["warns"],
+        description="Inspect and manage member warnings",
+    )
     @commands.guild_only()
     @checks.mod_or_permissions()
     async def warnings(self, ctx: Context):
