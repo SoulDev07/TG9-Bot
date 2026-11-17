@@ -642,8 +642,12 @@ class Moderation(commands.Cog, name="moderation"):
         channel: discord.TextChannel | None = None,
     ):
         """Inspect or adjust the slowmode delay for a text channel."""
-        target_channel = channel or (ctx.channel if isinstance(ctx.channel, discord.TextChannel) else None)
-        if target_channel is None or not isinstance(target_channel, discord.TextChannel | discord.Thread):
+        target_channel = channel or (
+            ctx.channel if isinstance(ctx.channel, discord.TextChannel) else None
+        )
+        if target_channel is None or not isinstance(
+            target_channel, discord.TextChannel | discord.Thread
+        ):
             embed = error_embed(
                 title="Invalid Channel",
                 description="Slowmode can only be configured for text channels and threads.",
@@ -773,7 +777,10 @@ class Moderation(commands.Cog, name="moderation"):
             await ctx.send(embed=embed)
             return
 
-        if normalized_ping in ("everyone", "here") and not ctx.author.guild_permissions.mention_everyone:
+        if (
+            normalized_ping in ("everyone", "here")
+            and not ctx.author.guild_permissions.mention_everyone
+        ):
             embed = error_embed(
                 title="Permission Denied",
                 description="You need `Mention Everyone` permission to include `@everyone` or `@here` pings.",
@@ -781,7 +788,11 @@ class Moderation(commands.Cog, name="moderation"):
             await ctx.send(embed=embed)
             return
 
-        if role is not None and not ctx.author.guild_permissions.mention_everyone and not role.mentionable:
+        if (
+            role is not None
+            and not ctx.author.guild_permissions.mention_everyone
+            and not role.mentionable
+        ):
             embed = error_embed(
                 title="Permission Denied",
                 description=f"You do not have permission to mention {role.mention}.",
@@ -945,16 +956,28 @@ class Moderation(commands.Cog, name="moderation"):
     async def selfrole_add(self, ctx: Context, role: discord.Role):
         """Add a role to the server's self-assignable roles pool."""
         if role.is_default():
-            embed = error_embed(title="Invalid Role", description="The `@everyone` role cannot be made self-assignable.")
+            embed = error_embed(
+                title="Invalid Role",
+                description="The `@everyone` role cannot be made self-assignable.",
+            )
             await ctx.send(embed=embed)
             return
 
         if role.managed:
-            embed = error_embed(title="Invalid Role", description="Managed integration/bot roles cannot be self-assigned.")
+            embed = error_embed(
+                title="Invalid Role",
+                description="Managed integration/bot roles cannot be self-assigned.",
+            )
             await ctx.send(embed=embed)
             return
 
-        dangerous_perms = ("administrator", "manage_guild", "ban_members", "kick_members", "manage_roles")
+        dangerous_perms = (
+            "administrator",
+            "manage_guild",
+            "ban_members",
+            "kick_members",
+            "manage_roles",
+        )
         has_dangerous = any(getattr(role.permissions, perm, False) for perm in dangerous_perms)
         if has_dangerous:
             embed = error_embed(
@@ -984,7 +1007,9 @@ class Moderation(commands.Cog, name="moderation"):
             return
 
         await self.bot.guild_repo.add_role(ctx.guild.id, role.id, "selfrole")
-        logger.info("selfrole_added", guild_id=ctx.guild.id, role_id=role.id, moderator=str(ctx.author))
+        logger.info(
+            "selfrole_added", guild_id=ctx.guild.id, role_id=role.id, moderator=str(ctx.author)
+        )
         embed = success_embed(
             title="Self-Role Added",
             description=f"Successfully registered {role.mention} as a self-assignable role.",
@@ -1008,7 +1033,9 @@ class Moderation(commands.Cog, name="moderation"):
             await ctx.send(embed=embed)
             return
 
-        logger.info("selfrole_removed", guild_id=ctx.guild.id, role_id=role.id, moderator=str(ctx.author))
+        logger.info(
+            "selfrole_removed", guild_id=ctx.guild.id, role_id=role.id, moderator=str(ctx.author)
+        )
         embed = success_embed(
             title="Self-Role Removed",
             description=f"Successfully removed {role.mention} from self-assignable roles.",

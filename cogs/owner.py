@@ -212,7 +212,7 @@ class Owner(commands.Cog, name="owner"):
             )
             await ctx.send(embed=embed)
 
-    @commands.command(name="cogs", aliases=["extensions", "modules"])
+    @commands.command(name="cogs", aliases=["extensions"])
     @checks.is_owner()
     async def list_cogs(self, ctx: Context):
         """List all currently loaded cogs and extensions."""

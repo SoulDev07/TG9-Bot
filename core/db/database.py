@@ -14,7 +14,6 @@ from core.logger import get_logger
 
 logger = get_logger()
 
-# Task-local tracking of the currently active connections to eliminate nested deadlocks
 _current_writer: ContextVar[aiosqlite.Connection | None] = ContextVar(
     "_current_writer", default=None
 )
@@ -23,27 +22,19 @@ _current_reader: ContextVar[aiosqlite.Connection | None] = ContextVar(
 )
 
 SCHEMA_DDL = """
-PRAGMA foreign_keys = ON;
-PRAGMA journal_mode = WAL;
-PRAGMA synchronous = NORMAL;
-PRAGMA busy_timeout = 5000;
-PRAGMA temp_store = MEMORY;
-PRAGMA cache_size = -64000;
-PRAGMA mmap_size = 268435456;
-
 CREATE TABLE IF NOT EXISTS guild_settings (
     guild_id INTEGER PRIMARY KEY,
     prefix TEXT NOT NULL DEFAULT '!',
     modlog_channel_id INTEGER,
     welcome_channel_id INTEGER,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
 
 CREATE TABLE IF NOT EXISTS guild_modules (
     guild_id INTEGER NOT NULL,
     module TEXT NOT NULL,
-    enabled INTEGER NOT NULL DEFAULT 1,
+    enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0, 1)),
     PRIMARY KEY (guild_id, module),
     FOREIGN KEY (guild_id) REFERENCES guild_settings(guild_id) ON DELETE CASCADE
 );
@@ -51,20 +42,20 @@ CREATE TABLE IF NOT EXISTS guild_modules (
 CREATE TABLE IF NOT EXISTS guild_roles (
     guild_id INTEGER NOT NULL,
     role_id INTEGER NOT NULL,
-    role_type TEXT NOT NULL,
-    PRIMARY KEY (guild_id, role_id, role_type),
+    role_type TEXT NOT NULL CHECK (role_type IN ('admin', 'mod', 'selfrole')),
+    PRIMARY KEY (guild_id, role_type, role_id),
     FOREIGN KEY (guild_id) REFERENCES guild_settings(guild_id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS blacklist (
     user_id INTEGER PRIMARY KEY,
     reason TEXT NOT NULL DEFAULT 'No reason specified',
-    created_at TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     created_by INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS mod_cases (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id INTEGER PRIMARY KEY,
     guild_id INTEGER NOT NULL,
     case_number INTEGER NOT NULL,
     action TEXT NOT NULL,
@@ -72,12 +63,11 @@ CREATE TABLE IF NOT EXISTS mod_cases (
     moderator_id INTEGER NOT NULL,
     reason TEXT NOT NULL DEFAULT 'Not specified',
     message_id INTEGER,
-    created_at TEXT NOT NULL,
-    UNIQUE(guild_id, case_number)
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    UNIQUE (guild_id, case_number)
 );
 
-CREATE INDEX IF NOT EXISTS idx_mod_cases_guild_user ON mod_cases(guild_id, user_id);
-CREATE INDEX IF NOT EXISTS idx_guild_modules_guild ON guild_modules(guild_id);
+CREATE INDEX IF NOT EXISTS idx_mod_cases_guild_user ON mod_cases(guild_id, user_id, case_number DESC);
 
 CREATE TABLE IF NOT EXISTS temp_bans (
     guild_id INTEGER NOT NULL,
@@ -87,43 +77,58 @@ CREATE TABLE IF NOT EXISTS temp_bans (
     PRIMARY KEY (guild_id, user_id)
 );
 
-CREATE INDEX IF NOT EXISTS idx_temp_bans_unban_at ON temp_bans(unban_at);
+CREATE INDEX IF NOT EXISTS idx_temp_bans_unban_at ON temp_bans(unban_at ASC);
 
 CREATE TABLE IF NOT EXISTS warning_settings (
     guild_id INTEGER PRIMARY KEY,
-    decay_days INTEGER NOT NULL DEFAULT 30
+    decay_days INTEGER NOT NULL DEFAULT 30 CHECK (decay_days >= 0)
 );
 
 CREATE TABLE IF NOT EXISTS warning_reasons (
     guild_id INTEGER NOT NULL,
     name TEXT NOT NULL,
-    points INTEGER NOT NULL DEFAULT 1,
+    points INTEGER NOT NULL DEFAULT 1 CHECK (points > 0),
     description TEXT,
     PRIMARY KEY (guild_id, name)
 );
 
 CREATE TABLE IF NOT EXISTS warning_actions (
     guild_id INTEGER NOT NULL,
-    points INTEGER NOT NULL,
-    action TEXT NOT NULL,
-    duration_seconds INTEGER,
+    points INTEGER NOT NULL CHECK (points > 0),
+    action TEXT NOT NULL CHECK (action IN ('timeout', 'kick', 'ban', 'softban')),
+    duration_seconds INTEGER CHECK (duration_seconds IS NULL OR duration_seconds > 0),
     PRIMARY KEY (guild_id, points)
 );
 
 CREATE TABLE IF NOT EXISTS warnings (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id INTEGER PRIMARY KEY,
     guild_id INTEGER NOT NULL,
     user_id INTEGER NOT NULL,
     moderator_id INTEGER NOT NULL,
     reason TEXT NOT NULL,
-    points INTEGER NOT NULL DEFAULT 1,
-    created_at TEXT NOT NULL,
+    points INTEGER NOT NULL DEFAULT 1 CHECK (points > 0),
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     expires_at TEXT,
     case_number INTEGER
 );
 
-CREATE INDEX IF NOT EXISTS idx_warnings_guild_user ON warnings(guild_id, user_id);
-CREATE INDEX IF NOT EXISTS idx_warnings_expires_at ON warnings(expires_at);
+CREATE INDEX IF NOT EXISTS idx_warnings_active ON warnings(guild_id, user_id, expires_at);
+CREATE INDEX IF NOT EXISTS idx_warnings_expires_at ON warnings(expires_at) WHERE expires_at IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS reminders (
+    id INTEGER PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    guild_id INTEGER,
+    channel_id INTEGER,
+    message TEXT NOT NULL,
+    remind_at TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    repeat_interval_seconds INTEGER CHECK (repeat_interval_seconds IS NULL OR repeat_interval_seconds >= 60)
+);
+
+CREATE INDEX IF NOT EXISTS idx_reminders_remind_at ON reminders(remind_at ASC);
+CREATE INDEX IF NOT EXISTS idx_reminders_user_id ON reminders(user_id, remind_at ASC);
+CREATE INDEX IF NOT EXISTS idx_reminders_guild ON reminders(guild_id) WHERE guild_id IS NOT NULL;
 """
 
 

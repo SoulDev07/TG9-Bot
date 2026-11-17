@@ -11,11 +11,13 @@ from core.db.models import (
     GuildRole,
     GuildSettings,
     ModCase,
+    ReminderRecord,
     WarningAction,
     WarningReason,
     WarningRecord,
     WarningSettings,
 )
+from core.db.reminders import ReminderRepository
 from core.db.tempbans import TempBanRepository
 from core.db.warnings import WarningRepository
 
@@ -30,6 +32,8 @@ __all__ = [
     "GuildRole",
     "GuildSettings",
     "ModCase",
+    "ReminderRecord",
+    "ReminderRepository",
     "TempBanRepository",
     "WarningAction",
     "WarningReason",

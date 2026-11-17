@@ -18,15 +18,12 @@ def validate_hierarchy(ctx: Context, target: discord.Member) -> None:
     if not ctx.guild:
         return
 
-    # Rule 1: Cannot target the guild owner
     if target.id == ctx.guild.owner_id:
         raise HierarchyError("You cannot perform moderation actions against the server owner.")
 
-    # Rule 2: Cannot target the bot itself
     if target.id == ctx.bot.user.id:
         raise HierarchyError("I cannot perform moderation actions against myself.")
 
-    # Rule 3: Cannot target yourself
     if target.id == ctx.author.id:
         raise HierarchyError("You cannot perform moderation actions against yourself.")
 
@@ -42,7 +39,6 @@ def validate_hierarchy(ctx: Context, target: discord.Member) -> None:
     author_top_role = getattr(author_member, "top_role", None)
     target_top_role = getattr(target, "top_role", None)
 
-    # Rule 4: Moderator must outrank target (bypassed by bot owner or guild owner)
     if (
         not (is_owner_invoker or is_guild_owner)
         and author_top_role
@@ -54,7 +50,6 @@ def validate_hierarchy(ctx: Context, target: discord.Member) -> None:
             f"{target.mention}'s highest role ({target_top_role.mention})."
         )
 
-    # Rule 5: Bot's highest role must outrank target
     bot_member = ctx.guild.me or (ctx.bot.user and ctx.guild.get_member(ctx.bot.user.id))
     bot_top_role = getattr(bot_member, "top_role", None)
     if bot_top_role and target_top_role and bot_top_role <= target_top_role:

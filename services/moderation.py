@@ -124,7 +124,6 @@ async def warn_member(
     """Validate hierarchy, record warning points, trigger automated escalations, and audit log."""
     validate_target(ctx, member)
 
-    # Resolve points from preset reasons if not explicitly specified
     if points is None:
         matched_reason = await ctx.bot.warning_repo.get_reason(ctx.guild.id, reason)
         resolved_points = matched_reason.points if matched_reason else 1
@@ -135,7 +134,6 @@ async def warn_member(
     settings = await ctx.bot.warning_repo.get_settings(ctx.guild.id)
     expires_at = now + timedelta(days=settings.decay_days) if settings.decay_days > 0 else None
 
-    # Fetch pre-warning accumulated points
     prev_points = await ctx.bot.warning_repo.get_active_points(ctx.guild.id, member.id, now=now)
     new_points = prev_points + resolved_points
 
@@ -152,7 +150,6 @@ async def warn_member(
         case_number=case.case_number,
     )
 
-    # Evaluate escalation rules
     actions = await ctx.bot.warning_repo.get_actions(ctx.guild.id)
     triggered_actions = [action for action in actions if prev_points < action.points <= new_points]
 
@@ -191,7 +188,6 @@ async def warn_member(
                     )
                 await record_case(ctx, action="softban", target=member, reason=escalation_reason)
 
-    # Direct message user regarding warning and escalation
     escalation_notice = ""
     if escalated_action:
         if escalated_action.action == "timeout":

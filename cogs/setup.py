@@ -52,7 +52,7 @@ class Setup(commands.Cog, name="setup"):
 
     @commands.hybrid_command(
         name="settings",
-        aliases=["config", "modules"],
+        aliases=["config"],
         description="Open the interactive server configuration and module dashboard",
     )
     @commands.guild_only()

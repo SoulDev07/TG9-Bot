@@ -22,6 +22,7 @@ from core.db import (
     CaseRepository,
     DatabaseManager,
     GuildRepository,
+    ReminderRepository,
     TempBanRepository,
     WarningRepository,
 )
@@ -66,6 +67,7 @@ class DiscordBot(commands.Bot):
         self.case_repo = CaseRepository(self.db)
         self.tempban_repo = TempBanRepository(self.db)
         self.warning_repo = WarningRepository(self.db)
+        self.reminder_repo = ReminderRepository(self.db)
 
     async def load_cogs(self) -> None:
         """Load all extension modules from the cogs directory."""

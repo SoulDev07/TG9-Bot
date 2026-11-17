@@ -69,13 +69,54 @@ async def test_serialized_writer_transactions(db_manager: DatabaseManager) -> No
 async def test_task_local_reentrant_borrowing(db_manager: DatabaseManager) -> None:
     """Verify that nested connection contexts in the same task borrow without deadlocking."""
     async with db_manager.write() as outer_conn:  # noqa: SIM117
-        # Deliberately nested write context to verify task-local borrowing
         async with db_manager.write() as inner_conn:
             assert outer_conn is inner_conn
-            # Deliberately nested read context to verify task-local borrowing
             async with db_manager.read() as read_conn:
                 assert read_conn is outer_conn
                 cursor = await read_conn.execute("SELECT 42 AS num;")
                 row = await cursor.fetchone()
                 assert row is not None
                 assert row["num"] == 42
+
+
+@pytest.mark.asyncio
+async def test_database_schema_check_constraints(db_manager: DatabaseManager) -> None:
+    """Verify check constraints and default timestamps across tables."""
+    import aiosqlite
+
+    async with db_manager.write() as conn:
+        await conn.execute("INSERT INTO guild_settings (guild_id) VALUES (12345);")
+        await conn.commit()
+
+        # Check constraint on guild_modules.enabled
+        with pytest.raises(aiosqlite.IntegrityError):
+            await conn.execute(
+                "INSERT INTO guild_modules (guild_id, module, enabled) VALUES (12345, 'fun', 5);"
+            )
+
+        # Check constraint on guild_roles.role_type
+        with pytest.raises(aiosqlite.IntegrityError):
+            await conn.execute(
+                "INSERT INTO guild_roles (guild_id, role_id, role_type) VALUES (12345, 99, 'invalid_role');"
+            )
+
+        # Check constraint on warning_actions.action
+        with pytest.raises(aiosqlite.IntegrityError):
+            await conn.execute(
+                "INSERT INTO warning_actions (guild_id, points, action) VALUES (12345, 3, 'explode');"
+            )
+
+        # Check constraint on reminders.repeat_interval_seconds
+        with pytest.raises(aiosqlite.IntegrityError):
+            await conn.execute(
+                "INSERT INTO reminders (user_id, message, remind_at, repeat_interval_seconds) VALUES (1, 'hi', '2026-01-01', 10);"
+            )
+
+        # Check default timestamps
+        cursor = await conn.execute(
+            "SELECT created_at, updated_at FROM guild_settings WHERE guild_id = 12345;"
+        )
+        row = await cursor.fetchone()
+        assert row is not None
+        assert row["created_at"] is not None
+        assert row["updated_at"] is not None

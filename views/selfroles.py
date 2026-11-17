@@ -45,7 +45,9 @@ class SelfRoleSelect(discord.ui.Select):
     async def callback(self, interaction: discord.Interaction) -> None:
         """Handle member role toggle selection."""
         if not interaction.guild or not isinstance(interaction.user, discord.Member):
-            await interaction.response.send_message("This can only be used in a server.", ephemeral=True)
+            await interaction.response.send_message(
+                "This can only be used in a server.", ephemeral=True
+            )
             return
 
         member = interaction.user
@@ -98,10 +100,11 @@ class SelfRoleSelect(discord.ui.Select):
 class SelfRoleSelectView(discord.ui.View):
     """Ephemeral view displaying the dropdown role picker."""
 
-    def __init__(self, roles: list[discord.Role], member: discord.Member, timeout: float = 180.0) -> None:
+    def __init__(
+        self, roles: list[discord.Role], member: discord.Member, timeout: float = 180.0
+    ) -> None:
         super().__init__(timeout=timeout)
         self.invoker_id = member.id
-        # Support up to 125 self-roles across 5 action rows (25 roles per row)
         for index, chunk_start in enumerate(range(0, min(len(roles), 125), 25)):
             chunk = roles[chunk_start : chunk_start + 25]
             placeholder = (
@@ -142,7 +145,9 @@ class PersistentSelfRoleView(discord.ui.View):
         """Dynamically fetch self-roles for this guild and open an ephemeral picker."""
         guild = interaction.guild
         if not guild or not isinstance(interaction.user, discord.Member):
-            await interaction.response.send_message("This can only be used in a server.", ephemeral=True)
+            await interaction.response.send_message(
+                "This can only be used in a server.", ephemeral=True
+            )
             return
 
         bot = interaction.client

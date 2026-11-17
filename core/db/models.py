@@ -104,7 +104,7 @@ class WarningAction(BaseModel):
 
     guild_id: int
     points: int
-    action: str  # "timeout", "kick", "ban", "softban"
+    action: str
     duration_seconds: int | None = None
 
 
@@ -138,3 +138,18 @@ class WarningRecord(BaseModel):
         if self.expires_at is None:
             return False
         return datetime.now(UTC) >= self.expires_at
+
+
+class ReminderRecord(BaseModel):
+    """Scheduled user or recurring broadcast reminder."""
+
+    model_config = ConfigDict(frozen=True, extra="ignore")
+
+    id: int | None = None
+    user_id: int
+    guild_id: int | None = None
+    channel_id: int | None = None
+    message: str
+    remind_at: datetime
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    repeat_interval_seconds: int | None = None

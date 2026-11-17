@@ -260,9 +260,17 @@ class General(commands.Cog, name="general"):
             ("Server ID", f"`{guild.id}`", True),
             ("Created", f"<t:{created_ts}:R>", True),
             ("Members", f"**{total_members}** total", True),
-            ("Channels", f"💬 {text_channels} text • 🔊 {voice_channels} voice • 📁 {categories} categories", True),
+            (
+                "Channels",
+                f"💬 {text_channels} text • 🔊 {voice_channels} voice • 📁 {categories} categories",
+                True,
+            ),
             ("Roles", f"`{roles_count}` roles", True),
-            ("Boost Status", f"Tier **{guild.premium_tier}** ({guild.premium_subscription_count or 0} boosts)", True),
+            (
+                "Boost Status",
+                f"Tier **{guild.premium_tier}** ({guild.premium_subscription_count or 0} boosts)",
+                True,
+            ),
             ("Verification Level", str(guild.verification_level).capitalize(), True),
         ]
 

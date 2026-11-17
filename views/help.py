@@ -38,6 +38,10 @@ CATEGORIES = {
             "**Role Management:**\n"
             "• `/selfroles`: Open the interactive self-role picker\n"
             "• `/selfrole add|remove|list|post`: Configure self-assignable roles\n\n"
+            "**Interactive Tools & Editor:**\n"
+            "• `/builder`: Modal-based interactive embed builder with live preview\n"
+            "• `/edit message <message_id> <text>`: Edit bot-authored messages\n"
+            "• `/edit embed <message_id>`: Live-edit bot-authored embeds in a modal\n\n"
             "**Cleanup Suite:**\n"
             "• `/purge [amount]`: Bulk delete recent messages\n"
             "• `/purge user <member> [amount]`: Clean messages from a specific member\n"
@@ -61,6 +65,9 @@ CATEGORIES = {
             "• `/serverinfo`: View server metrics, channels, roles, and boost tier\n"
             "• `/avatar [user]`: View full resolution avatar with direct link\n"
             "• `/server`: Direct invite link to support server\n"
+            "• `/remindme <duration> <note>`: Set scheduled personal reminder or timer\n"
+            "• `/reminders list | delete`: Manage active reminders and timers\n"
+            "• `/remindrepeat <interval> <text>`: Schedule repeating server broadcasts\n"
             "• `/poll <question>`: Create an interactive button-based voting poll"
         ),
     },

@@ -1,5 +1,6 @@
 """Interactive Discord UI views and dashboard components."""
 
+from views.builder import EmbedBuilderView
 from views.cases import CaseHistoryPaginationView
 from views.confirm import ConfirmView
 from views.games import RockPaperScissorsView
@@ -15,6 +16,7 @@ __all__ = [
     "BasePaginationView",
     "CaseHistoryPaginationView",
     "ConfirmView",
+    "EmbedBuilderView",
     "HelpMenuView",
     "PersistentSelfRoleView",
     "PollView",

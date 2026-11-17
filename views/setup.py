@@ -31,7 +31,6 @@ class SetupWizardView(discord.ui.View):
         self.guild = guild
         self.invoker_id = invoker_id
 
-        # Draft selections (seeded with existing database state)
         self.selected_modlog_id: int | None = initial_settings.modlog_channel_id
         self.selected_welcome_id: int | None = initial_settings.welcome_channel_id
         self.selected_admin_role_id: int | None = next(iter(initial_admin_roles), None)
@@ -177,7 +176,6 @@ class SetupWizardView(discord.ui.View):
         if self.selected_mod_role_id is not None:
             await self.bot.guild_repo.add_role(guild_id, self.selected_mod_role_id, "mod")
 
-        # Disable all components upon completion
         for child in self.children:
             if hasattr(child, "disabled"):
                 child.disabled = True

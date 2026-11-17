@@ -25,7 +25,7 @@ class PollView(discord.ui.View):
         super().__init__(timeout=timeout)
         self.question = question
         self.creator = creator
-        self.votes: dict[int, str] = {}  # user_id -> choice ("yes", "no", "abstain")
+        self.votes: dict[int, str] = {}
         self.message: discord.Message | None = None
 
     def build_embed(self, closed: bool = False) -> discord.Embed:
